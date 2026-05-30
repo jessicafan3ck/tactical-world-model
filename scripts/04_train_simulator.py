@@ -78,11 +78,20 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Targets ───────────────────────────────────────────────────────────────────
 
+def _safe(val, default: float = 0.0) -> float:
+    """float() with NaN→default. Python's 'or 0' guard fails because NaN is truthy."""
+    try:
+        v = float(val)
+        return default if (v != v) else v   # v != v is True only for NaN
+    except (TypeError, ValueError):
+        return default
+
+
 def build_targets(row: dict) -> np.ndarray:
-    s2     = float(row.get("reached_s2",    0) or 0)
-    shot   = float(row.get("reached_shot",  0) or 0)
-    goal   = float(row.get("_goal_in_poss", 0) or 0)
-    retain = float(row.get("_retain",       0) or 0)
+    s2     = _safe(row.get("reached_s2",    0))
+    shot   = _safe(row.get("reached_shot",  0))
+    goal   = _safe(row.get("_goal_in_poss", 0))
+    retain = _safe(row.get("_retain",       0))
     return np.array([s2, shot, goal, retain], dtype=np.float32)
 
 
@@ -253,7 +262,10 @@ def train_simulator(model: SimulatorRNN,
         for i in range(4):
             p = np.concatenate(all_preds[i])
             t = np.concatenate(all_tgts[i])
-            aucs.append(roc_auc_score(t, p) if 0 < t.sum() < len(t) else float("nan"))
+            if np.any(np.isnan(p)) or np.any(np.isnan(t)) or not (0 < t.sum() < len(t)):
+                aucs.append(float("nan"))
+            else:
+                aucs.append(roc_auc_score(t, p))
 
         entry = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
                  **{f"auc_{tnames[i]}": aucs[i] for i in range(4)}}
