@@ -222,6 +222,104 @@ class ConditionalEngine:
             context_after = context_after,
         )
 
+    # ── Sequence simulation ────────────────────────────────────────────────────
+
+    @torch.no_grad()
+    def simulate_sequence(
+        self,
+        sequence:        list,
+        context:         "MatchContext",
+        team_id_a:       int,
+        team_id_b:       int,
+        gen_steps:       int   = 30,
+        minute_per_step: float = 0.5,
+    ) -> list:
+        """
+        Simulate a user-designed tactical sequence with opposition response.
+
+        Each step applies the attacker's action to z_A and a counter-action to
+        z_B (at 0.5 intensity), generating a freeze frame under both modified
+        fingerprints. Probability deltas are computed vs the pre-sequence baseline.
+
+        Args:
+            sequence        : list of (Action, alpha) tuples, max 15 steps
+            context         : starting MatchContext
+            minute_per_step : simulated time per action (default 0.5 min)
+        """
+        from model.action_encoder import apply_action, ACTION_LABELS, Action, MatchContext
+
+        RESPONSE = {
+            Action.ADVANCE:      Action.LOW_BLOCK,
+            Action.THROUGH_BALL: Action.LOW_BLOCK,
+            Action.SHOOT:        Action.LOW_BLOCK,
+            Action.CROSS:        Action.LOW_BLOCK,
+            Action.DRIBBLE:      Action.LOW_BLOCK,
+            Action.HOLD:         Action.ADVANCE,
+            Action.LOW_BLOCK:    Action.ADVANCE,
+            Action.PRESS:        Action.HOLD,
+            Action.KEEPER_BALL:  Action.PRESS,
+            Action.SWITCH_LEFT:  Action.SWITCH_RIGHT,
+            Action.SWITCH_RIGHT: Action.SWITCH_LEFT,
+        }
+
+        z_A = self.fingerprints.get(team_id_a, self.mean_fp).clone().to(self.device)
+        z_B = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
+        ctx = context
+
+        baseline = self._run_sse_probs(z_A, z_B, ctx)
+        results  = []
+
+        for action, alpha in sequence:
+            z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, alpha).to(self.device)
+
+            def_action = RESPONSE.get(action, Action.HOLD)
+            z_B_mod = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+
+            c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
+            gen_xy = self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps)
+
+            probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
+            deltas = OutcomeProbabilities(
+                p_advance     = probs.p_advance     - baseline.p_advance,
+                p_shot        = probs.p_shot        - baseline.p_shot,
+                p_final_third = probs.p_final_third - baseline.p_final_third,
+            )
+
+            new_zone   = min(ctx.zone + int(action.value == 0), 3)
+            new_minute = min(ctx.minute + minute_per_step, 90.0)
+
+            results.append(ActionResult(
+                action_name   = ACTION_LABELS[action],
+                freeze_frame  = FreezeFrameResult(
+                    gen_xy.squeeze(0).cpu().numpy(),
+                    self.roles.squeeze(0).cpu().numpy(),
+                    self.mask.squeeze(0).cpu().numpy(),
+                ),
+                probs         = probs,
+                prob_deltas   = deltas,
+                context_after = {
+                    "score_diff":       ctx.score_diff,
+                    "minute":           round(new_minute, 1),
+                    "zone":             new_zone,
+                    "phase":            ctx.phase,
+                    "poss_team":        ctx.poss_team,
+                    "defense_response": ACTION_LABELS[def_action],
+                },
+            ))
+
+            # Carry forward evolved fingerprints and context
+            z_A = z_A_mod
+            z_B = z_B_mod
+            ctx = MatchContext(
+                score_diff = ctx.score_diff,
+                minute     = new_minute,
+                zone       = new_zone,
+                phase      = ctx.phase,
+                poss_team  = ctx.poss_team,
+            )
+
+        return results
+
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _encode_condition(self,

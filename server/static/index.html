@@ -1,500 +1,719 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tactical World Model — Interactive</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tactical World Model</title>
+<style>
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #1c2128;
+  --border:   #30363d;
+  --text:     #e6edf3;
+  --muted:    #7d8590;
+  --blue:     #58a6ff;
+  --gold:     #f0c040;
+  --red:      #f85149;
+  --green:    #3fb950;
+  --purple:   #bc8cff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
 
-    body {
-      background: #0d1117;
-      color: #e6edf3;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-height: 100vh;
-      padding: 16px;
-      gap: 16px;
-    }
+/* ── Header ─────────────────────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+header h1 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold);
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+.team-row { display: flex; align-items: center; gap: 8px; }
+.team-row select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 150px;
+}
+.team-row .vs { color: var(--muted); font-size: 11px; }
+.ctx-row { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.ctx-row label { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.ctx-row input, .ctx-row select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  width: 52px;
+}
+.ctx-row select { width: auto; }
 
-    h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: #58a6ff; }
+/* ── Layout ──────────────────────────────────────────────────────── */
+.workspace { display: grid; grid-template-columns: 210px 1fr; overflow: hidden; }
 
-    /* ── Layout ───────────────────────────────────────────── */
-    #main-grid {
-      display: grid;
-      grid-template-columns: 1fr 260px;
-      gap: 16px;
-      width: 100%;
-      max-width: 1100px;
-    }
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-top { overflow-y: auto; flex: 1; padding: 10px; }
+.palette-group { margin-bottom: 10px; }
+.palette-group h4 {
+  font-size: 10px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
+}
+.action-btn {
+  display: flex; align-items: center; width: 100%;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 7px; border-radius: 5px;
+  margin-bottom: 3px; cursor: pointer; font-size: 12px; text-align: left; gap: 7px;
+}
+.action-btn:hover { background: #2d333b; border-color: #484f58; }
+.action-btn:active { opacity: 0.7; }
+.action-btn.attack { border-left: 3px solid var(--blue); }
+.action-btn.build  { border-left: 3px solid var(--purple); }
+.action-btn.defend { border-left: 3px solid var(--red); }
+.kbd {
+  margin-left: auto; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 4px; font-size: 9px; color: var(--muted);
+  font-family: monospace; flex-shrink: 0;
+}
 
-    /* ── Pitch ────────────────────────────────────────────── */
-    #pitch-wrap {
-      position: relative;
-      background: #1a3a2a;
-      border-radius: 8px;
-      overflow: hidden;
-      border: 1px solid #30363d;
-    }
-    #pitch { display: block; width: 100%; }
+/* Queue */
+.sidebar-bottom {
+  border-top: 1px solid var(--border); padding: 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.queue-header {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.6px;
+}
+.queue-count { color: var(--text); }
+.queue-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 160px; overflow-y: auto;
+}
+.queue-item {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 6px; font-size: 11px;
+}
+.q-num  { color: var(--muted); width: 14px; text-align: center; flex-shrink: 0; }
+.q-lbl  { flex: 1; }
+.q-rm   { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; }
+.q-rm:hover { color: var(--red); }
+.queue-empty { color: var(--muted); font-size: 11px; font-style: italic; padding: 6px 0; text-align: center; }
+.btn-row { display: flex; gap: 6px; }
+.btn { flex: 1; padding: 6px 8px; border-radius: 5px; border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; }
+.btn-clear { background: var(--surface2); color: var(--muted); }
+.btn-clear:hover { color: var(--text); }
+.btn-run { background: var(--green); color: #000; border-color: var(--green); font-weight: 600; }
+.btn-run:disabled { background: #1f3a24; color: #3a6040; border-color: #1f3a24; cursor: not-allowed; }
 
-    /* ── Side panel ───────────────────────────────────────── */
-    #panel {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+/* ── Main area ───────────────────────────────────────────────────── */
+.main { display: grid; grid-template-rows: 1fr auto auto auto; overflow: hidden; }
 
-    .card {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 12px;
-    }
-    .card h2 { font-size: 0.75rem; text-transform: uppercase;
-               letter-spacing: 0.08em; color: #8b949e; margin-bottom: 8px; }
+.pitch-wrap {
+  position: relative; overflow: hidden; display: flex;
+  align-items: center; justify-content: center; padding: 10px; background: var(--bg);
+}
+canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
 
-    /* ── Team picker ──────────────────────────────────────── */
-    select {
-      width: 100%;
-      background: #0d1117;
-      color: #e6edf3;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      padding: 6px 8px;
-      font-size: 0.85rem;
-      margin-bottom: 6px;
-    }
+.step-badge {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+  border-radius: 6px; padding: 5px 12px; text-align: center;
+  pointer-events: none; white-space: nowrap; display: none;
+}
+.step-badge.visible { display: block; }
+.badge-action { font-size: 14px; font-weight: 600; color: var(--gold); }
+.badge-def    { font-size: 10px; color: var(--red); margin-top: 1px; }
 
-    /* ── Probability bars ─────────────────────────────────── */
-    .prob-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 5px;
-    }
-    .prob-label { width: 72px; font-size: 0.75rem; color: #8b949e; flex-shrink: 0; }
-    .prob-track {
-      flex: 1;
-      height: 8px;
-      background: #21262d;
-      border-radius: 4px;
-      overflow: hidden;
-    }
-    .prob-fill {
-      height: 100%;
-      border-radius: 4px;
-      transition: width 0.35s ease;
-    }
-    .prob-fill.shot    { background: #f78166; }
-    .prob-fill.advance { background: #3fb950; }
-    .prob-fill.third   { background: #58a6ff; }
-    .prob-value { width: 38px; font-size: 0.75rem; text-align: right; }
-    .delta { font-size: 0.7rem; width: 42px; text-align: right; }
-    .delta.pos { color: #3fb950; }
-    .delta.neg { color: #f78166; }
+.loading-overlay {
+  position: absolute; inset: 0; background: rgba(13,17,23,0.82);
+  display: none; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 12px; border-radius: 3px;
+}
+.loading-overlay.visible { display: flex; }
 
-    /* ── Action log ───────────────────────────────────────── */
-    #log-list {
-      list-style: none;
-      max-height: 140px;
-      overflow-y: auto;
-      font-size: 0.75rem;
-      color: #8b949e;
-    }
-    #log-list li { padding: 2px 0; border-bottom: 1px solid #21262d; }
-    #log-list li span { color: #e6edf3; }
+/* Playback */
+.playback {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-top: 1px solid var(--border); background: var(--surface);
+}
+.ctrl {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 4px 10px; border-radius: 4px;
+  cursor: pointer; font-size: 12px;
+}
+.ctrl:hover:not(:disabled) { background: #2d333b; }
+.ctrl:disabled { opacity: 0.35; cursor: not-allowed; }
+.ctrl.playing { background: var(--green); color: #000; border-color: var(--green); }
+.step-ctr { color: var(--muted); font-size: 11px; min-width: 70px; }
+.speed-sel {
+  margin-left: auto; background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); padding: 3px 5px; border-radius: 4px;
+  font-size: 10px; cursor: pointer;
+}
 
-    /* ── Controls reference ───────────────────────────────── */
-    .kbd-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
-      font-size: 0.68rem;
-    }
-    .kbd {
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 4px;
-      padding: 4px 2px;
-      text-align: center;
-      cursor: pointer;
-      user-select: none;
-      transition: background 0.1s;
-    }
-    .kbd:hover, .kbd.active { background: #58a6ff; color: #0d1117; }
-    .kbd .key  { font-weight: 700; display: block; font-size: 0.8rem; }
-    .kbd .desc { color: #8b949e; font-size: 0.62rem; display: block; }
-    .kbd:hover .desc, .kbd.active .desc { color: #0d1117; }
+/* Timeline */
+.timeline {
+  display: flex; align-items: flex-start; gap: 0; padding: 6px 12px;
+  border-top: 1px solid var(--border); overflow-x: auto;
+  background: var(--surface); min-height: 46px; scrollbar-width: thin;
+}
+.tl-empty { color: var(--muted); font-size: 11px; font-style: italic; align-self: center; }
+.tl-step {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  cursor: pointer; padding: 3px 6px; border-radius: 5px; flex-shrink: 0;
+  border: 1px solid transparent;
+}
+.tl-step:hover { background: var(--surface2); }
+.tl-step.active { background: rgba(240,192,64,0.1); border-color: rgba(240,192,64,0.35); }
+.tl-pill {
+  font-size: 10px; font-weight: 500; padding: 2px 7px;
+  border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); white-space: nowrap;
+}
+.tl-step.active .tl-pill { background: rgba(240,192,64,0.15); border-color: var(--gold); color: var(--gold); }
+.tl-def  { font-size: 9px; color: var(--red); white-space: nowrap; }
+.tl-arrow { color: var(--muted); font-size: 11px; padding: 0 2px; margin-top: 5px; align-self: flex-start; }
 
-    /* ── Context bar ──────────────────────────────────────── */
-    #context-bar {
-      display: flex;
-      gap: 12px;
-      font-size: 0.75rem;
-      color: #8b949e;
-    }
-    #context-bar span { color: #e6edf3; }
-
-    /* ── Touch action grid (mobile) ───────────────────────── */
-    #touch-grid {
-      display: none;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 6px;
-      width: 100%;
-      max-width: 400px;
-    }
-    .touch-btn {
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      padding: 10px 4px;
-      text-align: center;
-      font-size: 0.7rem;
-      cursor: pointer;
-      user-select: none;
-    }
-    .touch-btn:active { background: #58a6ff; color: #0d1117; }
-
-    @media (max-width: 700px) {
-      #main-grid { grid-template-columns: 1fr; }
-      #touch-grid { display: grid; }
-    }
-
-    #status { font-size: 0.75rem; color: #8b949e; }
-    #status.loading { color: #d29922; }
-    #status.error   { color: #f78166; }
-  </style>
+/* Prob bars */
+.prob-section {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  padding: 7px 12px; border-top: 1px solid var(--border); background: var(--surface);
+}
+.prob-row { display: flex; flex-direction: column; gap: 3px; }
+.prob-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+.prob-pct   { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.prob-delta { font-size: 9px; font-variant-numeric: tabular-nums; }
+.prob-delta.pos { color: var(--green); }
+.prob-delta.neg { color: var(--red); }
+.prob-track { height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+.prob-fill  { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+</style>
 </head>
 <body>
 
-<h1>Tactical World Model &mdash; Interactive Play</h1>
-
-<div id="main-grid">
-  <!-- Pitch canvas -->
-  <div id="pitch-wrap">
-    <canvas id="pitch" width="840" height="560"></canvas>
+<header>
+  <h1>Tactical World Model</h1>
+  <div class="team-row">
+    <select id="selA"><option value="">— Attacking team —</option></select>
+    <span class="vs">vs</span>
+    <select id="selB"><option value="">— Defending team —</option></select>
   </div>
-
-  <!-- Side panel -->
-  <div id="panel">
-
-    <!-- Team picker -->
-    <div class="card">
-      <h2>Teams</h2>
-      <select id="sel-home"></select>
-      <select id="sel-away"></select>
-      <div id="context-bar">
-        <div>Min: <span id="ctx-min">0</span></div>
-        <div>Score: <span id="ctx-score">0–0</span></div>
-        <div>Zone: <span id="ctx-zone">1</span></div>
-      </div>
-    </div>
-
-    <!-- Probabilities -->
-    <div class="card">
-      <h2>Outcome Probabilities</h2>
-      <div class="prob-row">
-        <div class="prob-label">Shot</div>
-        <div class="prob-track"><div class="prob-fill shot" id="bar-shot" style="width:0%"></div></div>
-        <div class="prob-value" id="val-shot">—</div>
-        <div class="delta" id="delta-shot"></div>
-      </div>
-      <div class="prob-row">
-        <div class="prob-label">Advance</div>
-        <div class="prob-track"><div class="prob-fill advance" id="bar-advance" style="width:0%"></div></div>
-        <div class="prob-value" id="val-advance">—</div>
-        <div class="delta" id="delta-advance"></div>
-      </div>
-      <div class="prob-row">
-        <div class="prob-label">Final third</div>
-        <div class="prob-track"><div class="prob-fill third" id="bar-third" style="width:0%"></div></div>
-        <div class="prob-value" id="val-third">—</div>
-        <div class="delta" id="delta-third"></div>
-      </div>
-    </div>
-
-    <!-- Controls -->
-    <div class="card">
-      <h2>Controls (keyboard / click)</h2>
-      <div class="kbd-grid" id="kbd-grid">
-        <div class="kbd" data-key="w"><span class="key">W/↑</span><span class="desc">Advance</span></div>
-        <div class="kbd" data-key="s"><span class="key">S/↓</span><span class="desc">Hold</span></div>
-        <div class="kbd" data-key="a"><span class="key">A/←</span><span class="desc">Sw. Left</span></div>
-        <div class="kbd" data-key="d"><span class="key">D/→</span><span class="desc">Sw. Right</span></div>
-        <div class="kbd" data-key="space"><span class="key">SPC</span><span class="desc">Shoot</span></div>
-        <div class="kbd" data-key="e"><span class="key">E</span><span class="desc">Dribble</span></div>
-        <div class="kbd" data-key="t"><span class="key">T</span><span class="desc">Through</span></div>
-        <div class="kbd" data-key="c"><span class="key">C</span><span class="desc">Cross</span></div>
-        <div class="kbd" data-key="p"><span class="key">P</span><span class="desc">Press</span></div>
-        <div class="kbd" data-key="l"><span class="key">L</span><span class="desc">Low blk</span></div>
-        <div class="kbd" data-key="g"><span class="key">G</span><span class="desc">Play out</span></div>
-      </div>
-    </div>
-
-    <!-- Action log -->
-    <div class="card">
-      <h2>Action Log</h2>
-      <ul id="log-list"></ul>
-    </div>
-
+  <div class="ctx-row">
+    <label>Minute <input type="number" id="iMin"   value="45" min="0" max="90"></label>
+    <label>Score  <input type="number" id="iScore" value="0"  min="-5" max="5"></label>
+    <label>Zone
+      <select id="iZone">
+        <option value="0">0 Own</option>
+        <option value="1" selected>1 Mid</option>
+        <option value="2">2 Attack</option>
+        <option value="3">3 Box</option>
+      </select>
+    </label>
+    <label>Phase
+      <select id="iPhase">
+        <option value="0" selected>Open play</option>
+        <option value="1">Set piece</option>
+        <option value="2">Counter</option>
+        <option value="3">GK dist.</option>
+      </select>
+    </label>
   </div>
-</div>
+</header>
 
-<!-- Touch grid (mobile) -->
-<div id="touch-grid">
-  <div class="touch-btn" data-key="w">↑ Advance</div>
-  <div class="touch-btn" data-key="s">↓ Hold</div>
-  <div class="touch-btn" data-key="a">← Left</div>
-  <div class="touch-btn" data-key="d">→ Right</div>
-  <div class="touch-btn" data-key="space">⚽ Shoot</div>
-  <div class="touch-btn" data-key="e">🏃 Dribble</div>
-  <div class="touch-btn" data-key="t">🎯 Through</div>
-  <div class="touch-btn" data-key="c">↗ Cross</div>
-  <div class="touch-btn" data-key="p">⚡ Press</div>
-  <div class="touch-btn" data-key="l">🛡 Low blk</div>
-  <div class="touch-btn" data-key="g">🧤 Play out</div>
-</div>
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div id="palette"></div>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="queue-header">
+        Sequence <span class="queue-count" id="qCount"></span>
+      </div>
+      <div id="qList" class="queue-list">
+        <div class="queue-empty">Click actions above to build a play</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-clear" onclick="clearAll()">Clear</button>
+        <button class="btn btn-run" id="runBtn" onclick="runSim()" disabled>&#9654; Run</button>
+      </div>
+    </div>
+  </aside>
 
-<div id="status">Loading teams…</div>
+  <main class="main">
+    <div class="pitch-wrap" id="pitchWrap">
+      <canvas id="pitch"></canvas>
+      <div class="step-badge" id="badge">
+        <div class="badge-action" id="badgeAction"></div>
+        <div class="badge-def"    id="badgeDef"></div>
+      </div>
+      <div class="loading-overlay" id="loader">Running simulation&hellip;</div>
+    </div>
+
+    <div class="playback">
+      <button class="ctrl" id="btnPrev" onclick="seek(S.step-1)" disabled>&#9664;</button>
+      <button class="ctrl" id="btnPlay" onclick="togglePlay()" disabled>&#9654; Play</button>
+      <button class="ctrl" id="btnNext" onclick="seek(S.step+1)" disabled>Next &#9654;</button>
+      <span class="step-ctr" id="stepCtr">&mdash;</span>
+      <select class="speed-sel" id="speedSel">
+        <option value="1600">Slow</option>
+        <option value="900" selected>Normal</option>
+        <option value="400">Fast</option>
+      </select>
+    </div>
+
+    <div class="timeline" id="timeline">
+      <span class="tl-empty">Run a sequence to see the playback timeline</span>
+    </div>
+
+    <div class="prob-section">
+      <div class="prob-row" id="pAdv">
+        <div class="prob-meta">
+          <span>P(Advance)</span>
+          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
+        </div>
+        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--blue)"></div></div>
+      </div>
+      <div class="prob-row" id="pShot">
+        <div class="prob-meta">
+          <span>P(Shot)</span>
+          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
+        </div>
+        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--gold)"></div></div>
+      </div>
+      <div class="prob-row" id="pFin">
+        <div class="prob-meta">
+          <span>P(Final 3rd)</span>
+          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
+        </div>
+        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--green)"></div></div>
+      </div>
+    </div>
+  </main>
+</div>
 
 <script>
-/* ── State ──────────────────────────────────────────────────────────────────── */
-const state = {
-  teamIdA: null,
-  teamIdB: null,
-  context: { score_diff: 0, minute: 0, zone: 1, phase: 0, poss_team: 0 },
-  positions: null,   // (N, 2) normalised
-  roles: null,       // (N, 2)
-  mask: null,        // (N,) bool
-  busy: false,
+// ── Action definitions ────────────────────────────────────────────────────────
+const ACTIONS = [
+  { name:"ADVANCE",      label:"Advance",        key:"W",     cls:"attack" },
+  { name:"THROUGH_BALL", label:"Through Ball",   key:"T",     cls:"attack" },
+  { name:"DRIBBLE",      label:"Dribble",        key:"E",     cls:"attack" },
+  { name:"SHOOT",        label:"Shoot",          key:"Space", cls:"attack" },
+  { name:"CROSS",        label:"Cross",          key:"C",     cls:"attack" },
+  { name:"SWITCH_LEFT",  label:"Switch Left",    key:"A",     cls:"build"  },
+  { name:"SWITCH_RIGHT", label:"Switch Right",   key:"D",     cls:"build"  },
+  { name:"HOLD",         label:"Hold / Recycle", key:"S",     cls:"build"  },
+  { name:"KEEPER_BALL",  label:"Play Out",       key:"G",     cls:"build"  },
+  { name:"PRESS",        label:"High Press",     key:"P",     cls:"defend" },
+  { name:"LOW_BLOCK",    label:"Low Block",      key:"L",     cls:"defend" },
+];
+const GROUP_NAMES = { attack:"Attack", build:"Build-Up", defend:"Defensive" };
+const KEY_MAP = {
+  "w":"ADVANCE","W":"ADVANCE","ArrowUp":"ADVANCE",
+  "s":"HOLD","S":"HOLD","ArrowDown":"HOLD",
+  "a":"SWITCH_LEFT","A":"SWITCH_LEFT","ArrowLeft":"SWITCH_LEFT",
+  "d":"SWITCH_RIGHT","D":"SWITCH_RIGHT","ArrowRight":"SWITCH_RIGHT",
+  "p":"PRESS","P":"PRESS",
+  "l":"LOW_BLOCK","L":"LOW_BLOCK",
+  " ":"SHOOT",
+  "e":"DRIBBLE","E":"DRIBBLE",
+  "t":"THROUGH_BALL","T":"THROUGH_BALL",
+  "c":"CROSS","C":"CROSS",
+  "g":"KEEPER_BALL","G":"KEEPER_BALL",
 };
 
-/* ── Canvas setup ───────────────────────────────────────────────────────────── */
-const canvas  = document.getElementById('pitch');
-const ctx2d   = canvas.getContext('2d');
-const PW      = canvas.width;
-const PH      = canvas.height;
-const PITCH_W = 120, PITCH_H = 80;    // StatsBomb dimensions
+// ── State ─────────────────────────────────────────────────────────────────────
+const S = {
+  teamA: null, teamB: null,
+  queue:   [],   // [{action, alpha}]
+  frames:  [],   // ActionResult[] returned by /api/simulate_sequence
+  step:    -1,
+  playing: false,
+  timer:   null,
+};
 
-function pitchToCanvas(x, y) {
-  return [x / PITCH_W * PW, (1 - y / PITCH_H) * PH];
-}
-function normToCanvas(nx, ny) {
-  return pitchToCanvas(nx * PITCH_W, ny * PITCH_H);
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener("load", async () => {
+  buildPalette();
+  resizeCanvas();
+  drawEmpty();
+  await loadTeams();
+});
+window.addEventListener("resize", () => {
+  resizeCanvas();
+  if (S.step >= 0) renderFrame(S.step); else drawEmpty();
+});
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  const a = KEY_MAP[e.key];
+  if (a) { e.preventDefault(); addToQueue(a); }
+  if (e.key === "Enter") runSim();
+});
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+function buildPalette() {
+  const pal = document.getElementById("palette");
+  for (const g of ["attack","build","defend"]) {
+    const items = ACTIONS.filter(a => a.cls === g);
+    const div = document.createElement("div");
+    div.className = "palette-group";
+    div.innerHTML = `<h4>${GROUP_NAMES[g]}</h4>`;
+    for (const a of items) {
+      const btn = document.createElement("button");
+      btn.className = `action-btn ${a.cls}`;
+      btn.innerHTML = `${a.label}<span class="kbd">${a.key}</span>`;
+      btn.onclick = () => addToQueue(a.name);
+      div.appendChild(btn);
+    }
+    pal.appendChild(div);
+  }
 }
 
-/* ── Pitch drawing ──────────────────────────────────────────────────────────── */
+// ── Teams ─────────────────────────────────────────────────────────────────────
+async function loadTeams() {
+  try {
+    const r = await fetch("/api/teams");
+    if (!r.ok) return;
+    const teams = await r.json();
+    const [sA, sB] = [document.getElementById("selA"), document.getElementById("selB")];
+    for (const t of teams) {
+      sA.appendChild(new Option(t.team_name, t.team_id));
+      sB.appendChild(new Option(t.team_name, t.team_id));
+    }
+    if (teams.length >= 2) {
+      sA.value = teams[0].team_id; S.teamA = teams[0].team_id;
+      sB.value = teams[1].team_id; S.teamB = teams[1].team_id;
+    }
+    sA.onchange = () => { S.teamA = +sA.value || null; };
+    sB.onchange = () => { S.teamB = +sB.value || null; };
+  } catch(e) { console.error(e); }
+}
+
+// ── Queue ─────────────────────────────────────────────────────────────────────
+function addToQueue(name) {
+  if (S.queue.length >= 12) return;
+  S.queue.push({ action: name, alpha: 1.0 });
+  redrawQueue();
+}
+function removeStep(i) { S.queue.splice(i, 1); redrawQueue(); }
+function redrawQueue() {
+  const list = document.getElementById("qList");
+  const ctr  = document.getElementById("qCount");
+  const run  = document.getElementById("runBtn");
+  ctr.textContent  = S.queue.length ? `(${S.queue.length})` : "";
+  run.disabled     = S.queue.length === 0;
+  if (!S.queue.length) {
+    list.innerHTML = '<div class="queue-empty">Click actions above to build a play</div>';
+    return;
+  }
+  list.innerHTML = S.queue.map((q, i) => {
+    const a = ACTIONS.find(a => a.name === q.action);
+    return `<div class="queue-item">
+      <span class="q-num">${i+1}</span>
+      <span class="q-lbl">${a ? a.label : q.action}</span>
+      <button class="q-rm" onclick="removeStep(${i})">&#215;</button>
+    </div>`;
+  }).join("");
+}
+function clearAll() {
+  S.queue = []; S.frames = []; S.step = -1; stopPlay();
+  redrawQueue(); drawTimeline([]); clearProbs();
+  document.getElementById("badge").classList.remove("visible");
+  updateControls(); drawEmpty();
+}
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+async function runSim() {
+  if (!S.teamA || !S.teamB) { alert("Select both teams first."); return; }
+  if (!S.queue.length) return;
+  stopPlay();
+  document.getElementById("loader").classList.add("visible");
+  document.getElementById("runBtn").disabled = true;
+  try {
+    const res = await fetch("/api/simulate_sequence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        team_id_a: +S.teamA,
+        team_id_b: +S.teamB,
+        context: {
+          score_diff: +document.getElementById("iScore").value || 0,
+          minute:     +document.getElementById("iMin").value   || 45,
+          zone:       +document.getElementById("iZone").value  || 1,
+          phase:      +document.getElementById("iPhase").value || 0,
+          poss_team:  0,
+        },
+        sequence:        S.queue,
+        minute_per_step: 0.5,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Server error");
+    }
+    const data = await res.json();
+    S.frames = data.frames; S.step = 0;
+    drawTimeline(S.frames);
+    renderFrame(0);
+    updateControls();
+  } catch(e) {
+    alert("Simulation failed: " + e.message);
+  } finally {
+    document.getElementById("loader").classList.remove("visible");
+    document.getElementById("runBtn").disabled = S.queue.length === 0;
+  }
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+function seek(n) {
+  if (!S.frames.length) return;
+  S.step = Math.max(0, Math.min(n, S.frames.length - 1));
+  renderFrame(S.step); updateControls();
+}
+function togglePlay() { S.playing ? stopPlay() : startPlay(); }
+function startPlay() {
+  if (S.step >= S.frames.length - 1) S.step = 0;
+  S.playing = true;
+  document.getElementById("btnPlay").textContent = "&#9646;&#9646; Pause";
+  document.getElementById("btnPlay").classList.add("playing");
+  tick();
+}
+function tick() {
+  if (!S.playing) return;
+  renderFrame(S.step); updateControls();
+  if (S.step < S.frames.length - 1) {
+    S.step++;
+    S.timer = setTimeout(tick, +document.getElementById("speedSel").value);
+  } else { stopPlay(); }
+}
+function stopPlay() {
+  S.playing = false; clearTimeout(S.timer);
+  document.getElementById("btnPlay").textContent = "&#9654; Play";
+  document.getElementById("btnPlay").classList.remove("playing");
+}
+function updateControls() {
+  const n = S.frames.length;
+  document.getElementById("btnPrev").disabled = n === 0 || S.step <= 0;
+  document.getElementById("btnNext").disabled = n === 0 || S.step >= n - 1;
+  document.getElementById("btnPlay").disabled = n === 0;
+  document.getElementById("stepCtr").textContent = n ? `Step ${S.step+1} / ${n}` : "—";
+}
+
+// ── Frame rendering ───────────────────────────────────────────────────────────
+function renderFrame(n) {
+  const f = S.frames[n]; if (!f) return;
+  drawPitch();
+  drawPlayers(f.positions, f.roles, f.mask);
+  const badge = document.getElementById("badge");
+  document.getElementById("badgeAction").textContent = f.action;
+  const def = f.context && f.context.defense_response;
+  document.getElementById("badgeDef").textContent = def ? "↩ Defense: " + def : "";
+  badge.classList.add("visible");
+  document.querySelectorAll(".tl-step").forEach((el, i) =>
+    el.classList.toggle("active", i === n));
+  renderProbs(f.probs, f.deltas);
+}
+
+// ── Probability bars ──────────────────────────────────────────────────────────
+function renderProbs(p, d) {
+  if (!p) return;
+  setProb("pAdv",  p.p_advance,     d && d.p_advance);
+  setProb("pShot", p.p_shot,        d && d.p_shot);
+  setProb("pFin",  p.p_final_third, d && d.p_final_third);
+}
+function setProb(id, val, delta) {
+  const row  = document.getElementById(id);
+  const pct  = row.querySelector(".prob-pct");
+  const dEl  = row.querySelector(".prob-delta");
+  const fill = row.querySelector(".prob-fill");
+  pct.textContent  = val != null ? Math.round(val * 100) + "%" : "—";
+  fill.style.width = val != null ? Math.round(val * 100) + "%" : "0%";
+  if (delta != null) {
+    const s = delta >= 0 ? "+" : "";
+    dEl.textContent = s + Math.round(delta * 100) + "%";
+    dEl.className   = "prob-delta" + (delta > 0.005 ? " pos" : delta < -0.005 ? " neg" : "");
+  } else { dEl.textContent = ""; dEl.className = "prob-delta"; }
+}
+function clearProbs() { ["pAdv","pShot","pFin"].forEach(id => setProb(id, null, null)); }
+
+// ── Timeline ──────────────────────────────────────────────────────────────────
+function drawTimeline(frames) {
+  const tl = document.getElementById("timeline");
+  if (!frames.length) {
+    tl.innerHTML = '<span class="tl-empty">Run a sequence to see the playback timeline</span>';
+    return;
+  }
+  let html = "";
+  frames.forEach((f, i) => {
+    if (i > 0) html += '<span class="tl-arrow">→</span>';
+    const def = f.context && f.context.defense_response || "";
+    html += `<div class="tl-step${i===0?" active":""}" onclick="seek(${i})">
+      <div class="tl-pill">${f.action}</div>
+      ${def ? `<div class="tl-def">↩ ${def}</div>` : ""}
+    </div>`;
+  });
+  tl.innerHTML = html;
+}
+
+// ── Canvas / Pitch ────────────────────────────────────────────────────────────
+let CW = 800, CH = 520;
+function resizeCanvas() {
+  const wrap   = document.getElementById("pitchWrap");
+  const canvas = document.getElementById("pitch");
+  const ratio  = 105 / 68;
+  const mw = wrap.clientWidth  - 20;
+  const mh = wrap.clientHeight - 20;
+  if (mw / ratio <= mh) { CW = mw; CH = Math.round(mw / ratio); }
+  else                  { CH = mh; CW = Math.round(mh * ratio); }
+  canvas.width = CW; canvas.height = CH;
+}
+const px = x => x * CW;
+const py = y => y * CH;
+
+function drawEmpty() {
+  drawPitch();
+  const ctx = document.getElementById("pitch").getContext("2d");
+  ctx.fillStyle    = "rgba(255,255,255,0.18)";
+  ctx.font         = Math.round(CH * 0.032) + "px sans-serif";
+  ctx.textAlign    = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Build a sequence and click Run to simulate", px(0.5), py(0.5));
+  ctx.textBaseline = "alphabetic";
+}
+
 function drawPitch() {
-  ctx2d.fillStyle = '#1a3a2a';
-  ctx2d.fillRect(0, 0, PW, PH);
+  const canvas = document.getElementById("pitch");
+  const ctx    = canvas.getContext("2d");
+  ctx.clearRect(0, 0, CW, CH);
 
-  ctx2d.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx2d.lineWidth = 1.5;
+  // Pitch background
+  ctx.fillStyle = "#1a4731";
+  ctx.fillRect(0, 0, CW, CH);
 
-  // Outline
-  ctx2d.strokeRect(2, 2, PW-4, PH-4);
-
-  // Halfway line
-  const [hx] = pitchToCanvas(PITCH_W/2, 0);
-  ctx2d.beginPath(); ctx2d.moveTo(hx, 2); ctx2d.lineTo(hx, PH-2); ctx2d.stroke();
-
-  // Centre circle
-  const [cx, cy] = pitchToCanvas(PITCH_W/2, PITCH_H/2);
-  const r = 9.15 / PITCH_W * PW;
-  ctx2d.beginPath(); ctx2d.arc(cx, cy, r, 0, Math.PI*2); ctx2d.stroke();
-
-  // Penalty boxes
-  for (const [xStart, dir] of [[0, 1], [PITCH_W, -1]]) {
-    const bx = xStart + dir*16.5, by1 = PITCH_H/2 - 20.16, by2 = PITCH_H/2 + 20.16;
-    const [ax, ay1] = pitchToCanvas(Math.min(xStart, bx), by2);
-    const bW = 16.5 / PITCH_W * PW;
-    const bH = 40.32 / PITCH_H * PH;
-    ctx2d.strokeRect(dir > 0 ? 2 : PW - bW - 2, ay1, bW, bH);
+  // Alternating stripes
+  for (let i = 0; i < 10; i++) {
+    if (i % 2 === 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.06)";
+      ctx.fillRect(px(i/10), 0, px(0.1), CH);
+    }
   }
 
-  // Zone lines (faint)
-  ctx2d.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx2d.setLineDash([6, 4]);
-  for (const xPitch of [40, 80, 102]) {
-    const [zx] = pitchToCanvas(xPitch, 0);
-    ctx2d.beginPath(); ctx2d.moveTo(zx, 0); ctx2d.lineTo(zx, PH); ctx2d.stroke();
-  }
-  ctx2d.setLineDash([]);
+  const P = 0.04;
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth   = 1.5;
+
+  // Boundary
+  ctx.strokeRect(px(P), py(P), px(1-2*P), py(1-2*P));
+
+  // Halfway line + centre circle
+  ctx.beginPath();
+  ctx.moveTo(px(0.5), py(P));
+  ctx.lineTo(px(0.5), py(1-P));
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(px(0.5), py(0.5), px(0.087), 0, 2*Math.PI);
+  ctx.stroke();
+
+  // Penalty areas
+  const [paW, paH, paT] = [0.157, 0.593, (1-0.593)/2];
+  ctx.strokeRect(px(P),       py(paT), px(paW), py(paH));
+  ctx.strokeRect(px(1-P-paW), py(paT), px(paW), py(paH));
+
+  // 6-yard boxes
+  const [sbW, sbH, sbT] = [0.057, 0.264, (1-0.264)/2];
+  ctx.strokeRect(px(P),       py(sbT), px(sbW), py(sbH));
+  ctx.strokeRect(px(1-P-sbW), py(sbT), px(sbW), py(sbH));
+
+  // Goals
+  const [gW, gH, gT] = [0.014, 0.112, (1-0.112)/2];
+  ctx.strokeRect(px(P-gW), py(gT), px(gW), py(gH));
+  ctx.strokeRect(px(1-P),  py(gT), px(gW), py(gH));
+
+  // Zone dividers (dashed)
+  ctx.strokeStyle = "rgba(255,255,255,0.14)";
+  ctx.setLineDash([5, 5]);
+  ctx.lineWidth = 1;
+  [1/3, 2/3].forEach(x => {
+    ctx.beginPath();
+    ctx.moveTo(px(x), py(P));
+    ctx.lineTo(px(x), py(1-P));
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  // Zone labels
+  ctx.fillStyle    = "rgba(255,255,255,0.11)";
+  ctx.font         = Math.round(CH * 0.026) + "px sans-serif";
+  ctx.textAlign    = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("Zone 0", px(1/6), py(P + 0.01));
+  ctx.fillText("Zone 1", px(3/6), py(P + 0.01));
+  ctx.fillText("Zone 2", px(5/6), py(P + 0.01));
+  ctx.textBaseline = "alphabetic";
 }
 
 function drawPlayers(positions, roles, mask) {
-  if (!positions) return;
+  const ctx = document.getElementById("pitch").getContext("2d");
+  const R   = Math.max(7, Math.round(CW * 0.011));
+
   for (let i = 0; i < positions.length; i++) {
     if (mask[i]) continue;
-    const [px, py] = normToCanvas(positions[i][0], positions[i][1]);
-    const isTm  = roles[i][0] > 0.5;
-    const isAct = roles[i][1] > 0.5;
+    const x       = px(positions[i][0]);
+    const y       = py(positions[i][1]);
+    const isMate  = roles[i][0] > 0.5;
+    const isActor = roles[i][1] > 0.5;
+    const color   = isActor ? "#f0c040" : isMate ? "#58a6ff" : "#f85149";
+    const r       = isActor ? R + 2 : R;
 
-    ctx2d.beginPath();
-    ctx2d.arc(px, py, isAct ? 10 : 7, 0, Math.PI*2);
+    ctx.shadowColor = "rgba(0,0,0,0.55)";
+    ctx.shadowBlur  = 5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.shadowBlur = 0;
 
-    if (isAct) {
-      ctx2d.fillStyle = '#f9c74f';
-      ctx2d.fill();
-      ctx2d.strokeStyle = '#000';
-      ctx2d.lineWidth = 1.5;
-      ctx2d.stroke();
-    } else if (isTm) {
-      ctx2d.fillStyle = '#90e0ef';
-      ctx2d.fill();
-    } else {
-      ctx2d.fillStyle = '#e63946';
-      ctx2d.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (isActor) {
+      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, 2*Math.PI);
+      ctx.strokeStyle = "rgba(240,192,64,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
   }
 }
-
-function render() {
-  drawPitch();
-  drawPlayers(state.positions, state.roles, state.mask);
-}
-
-/* ── API helpers ────────────────────────────────────────────────────────────── */
-async function loadTeams() {
-  const res = await fetch('/api/teams');
-  const teams = await res.json();
-
-  const selH = document.getElementById('sel-home');
-  const selA = document.getElementById('sel-away');
-  for (const t of teams) {
-    const opt = new Option(t.team_name, t.team_id);
-    selH.add(opt.cloneNode(true));
-    selA.add(opt);
-  }
-  // Default: first two teams
-  state.teamIdA = teams[0]?.team_id;
-  state.teamIdB = teams[1]?.team_id;
-  selH.value = state.teamIdA;
-  selA.value = state.teamIdB;
-
-  setStatus('Ready — press a key or click an action', '');
-}
-
-async function sendAction(key) {
-  if (state.busy || !state.teamIdA || !state.teamIdB) return;
-  state.busy = true;
-  setStatus('Generating…', 'loading');
-  flashKey(key);
-
-  const body = {
-    action:    key,
-    team_id_a: state.teamIdA,
-    team_id_b: state.teamIdB,
-    context:   { ...state.context },
-  };
-
-  try {
-    const res  = await fetch('/api/step', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body),
-    });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
-    const data = await res.json();
-    applyResult(data);
-    setStatus('Ready', '');
-  } catch (err) {
-    setStatus(`Error: ${err.message}`, 'error');
-  } finally {
-    state.busy = false;
-  }
-}
-
-/* ── Result application ─────────────────────────────────────────────────────── */
-function applyResult(data) {
-  state.positions = data.positions;
-  state.roles     = data.roles;
-  state.mask      = data.mask;
-
-  // Update context for next step
-  if (data.context) {
-    state.context = { ...state.context, ...data.context };
-    document.getElementById('ctx-min').textContent   = Math.floor(state.context.minute);
-    document.getElementById('ctx-zone').textContent  = state.context.zone;
-    const gh = Math.max(0, state.context.score_diff);
-    const ga = Math.max(0, -state.context.score_diff);
-    document.getElementById('ctx-score').textContent = `${gh}–${ga}`;
-  }
-
-  updateProbs(data.probs, data.deltas);
-  logAction(data.action, data.probs);
-  render();
-}
-
-function updateProbs(probs, deltas) {
-  const entries = [
-    ['shot',    probs.p_shot,        deltas.p_shot,        'bar-shot',    'val-shot',    'delta-shot'],
-    ['advance', probs.p_advance,     deltas.p_advance,     'bar-advance', 'val-advance', 'delta-advance'],
-    ['third',   probs.p_final_third, deltas.p_final_third, 'bar-third',   'val-third',   'delta-third'],
-  ];
-  for (const [, val, delta, barId, valId, deltaId] of entries) {
-    document.getElementById(barId).style.width  = `${(val * 100).toFixed(1)}%`;
-    document.getElementById(valId).textContent  = (val * 100).toFixed(1) + '%';
-    const dEl  = document.getElementById(deltaId);
-    const sign = delta >= 0 ? '+' : '';
-    dEl.textContent  = sign + (delta * 100).toFixed(1) + '%';
-    dEl.className    = 'delta ' + (delta >= 0 ? 'pos' : 'neg');
-  }
-}
-
-function logAction(actionName, probs) {
-  const li  = document.createElement('li');
-  li.innerHTML = `<span>${actionName}</span> — shot ${(probs.p_shot*100).toFixed(1)}%`;
-  const list = document.getElementById('log-list');
-  list.prepend(li);
-  while (list.children.length > 20) list.lastChild.remove();
-}
-
-/* ── UI helpers ─────────────────────────────────────────────────────────────── */
-function setStatus(msg, cls) {
-  const el = document.getElementById('status');
-  el.textContent = msg;
-  el.className   = cls;
-}
-
-function flashKey(key) {
-  const el = document.querySelector(`[data-key="${key}"]`);
-  if (!el) return;
-  el.classList.add('active');
-  setTimeout(() => el.classList.remove('active'), 200);
-}
-
-/* ── Event listeners ────────────────────────────────────────────────────────── */
-document.getElementById('sel-home').addEventListener('change', e => {
-  state.teamIdA = parseInt(e.target.value);
-});
-document.getElementById('sel-away').addEventListener('change', e => {
-  state.teamIdB = parseInt(e.target.value);
-});
-
-document.addEventListener('keydown', e => {
-  if (e.repeat) return;
-  const key = e.key === ' ' ? 'space' : e.key.toLowerCase()
-              .replace('arrowup','w').replace('arrowdown','s')
-              .replace('arrowleft','a').replace('arrowright','d');
-  const validKeys = ['w','s','a','d','space','e','t','c','p','l','g'];
-  if (validKeys.includes(key)) {
-    e.preventDefault();
-    sendAction(key);
-  }
-});
-
-document.querySelectorAll('.kbd, .touch-btn').forEach(el => {
-  el.addEventListener('click', () => sendAction(el.dataset.key));
-  el.addEventListener('touchend', e => { e.preventDefault(); sendAction(el.dataset.key); });
-});
-
-/* ── Boot ───────────────────────────────────────────────────────────────────── */
-render();
-loadTeams().catch(err => setStatus(`Failed to load teams: ${err.message}`, 'error'));
 </script>
 </body>
 </html>
