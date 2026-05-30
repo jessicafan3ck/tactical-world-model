@@ -132,6 +132,7 @@ class SequenceRequest(BaseModel):
     adversarial:     bool  = False   # True → Team B optimises its response
     n_samples:       int   = 1       # >1 → stochastic mode (Gaussian z-noise)
     noise_std:       float = 0.05    # noise magnitude as fraction of ||z_A||
+    continuity:      float = 0.0     # max per-player displacement per step (fraction of pitch); 0 = off
 
 
 class SuggestRequest(BaseModel):
@@ -333,6 +334,7 @@ async def simulate_sequence(req: SequenceRequest):
         adversarial     = req.adversarial,
         n_samples       = req.n_samples,
         noise_std       = req.noise_std,
+        continuity      = max(0.0, min(req.continuity, 1.0)),
     )
 
     return {"frames": [f.to_json_safe() for f in frames]}

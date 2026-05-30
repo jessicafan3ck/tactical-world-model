@@ -258,6 +258,7 @@ class ConditionalEngine:
         adversarial:     bool  = False,
         n_samples:       int   = 1,
         noise_std:       float = 0.05,
+        continuity:      float = 0.0,
     ) -> list:
         """
         Simulate a user-designed tactical sequence with opposition response.
@@ -284,6 +285,7 @@ class ConditionalEngine:
 
         baseline = self._run_sse_probs(z_A, z_B, ctx)
         results  = []
+        prev_xy: torch.Tensor | None = None   # (1, N, 2) on device, updated each step
 
         for action, alpha in sequence:
             z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, alpha).to(self.device)
@@ -296,15 +298,24 @@ class ConditionalEngine:
             new_zone   = min(ctx.zone + int(action.value == 0), 3)
             new_minute = min(ctx.minute + minute_per_step, 90.0)
 
+            # Temporal prior: previous frame's positions (None on first step)
+            x_prior     = prev_xy if (continuity > 0 and prev_xy is not None) else None
+            max_delta   = continuity if continuity > 0 else None
+
             if n_samples > 1:
                 # Stochastic mode: inject noise into z_A_mod across samples,
                 # average spatial outputs and track probability std.
+                # x_prior is shared across samples so continuity is anchored
+                # to the previous deterministic mean rather than a noisy sample.
                 all_xy, all_p = [], []
                 for _ in range(n_samples):
                     noise   = torch.randn_like(z_A_mod) * noise_std * norm_A
                     z_noisy = (z_A_mod + noise) * (norm_A / (z_A_mod + noise).norm().clamp(min=1e-8))
                     c_n     = self._encode_condition(z_noisy, z_B_mod, ctx)
-                    xy_n    = self.generator.generate(self.roles, c_n, self.mask, n_steps=gen_steps)
+                    xy_n    = self.generator.generate(
+                        self.roles, c_n, self.mask, n_steps=gen_steps,
+                        x_prior=x_prior, max_delta_per_step=max_delta,
+                    )
                     p_n     = self._run_sse_probs(z_noisy, z_B_mod, ctx)
                     all_xy.append(xy_n)
                     all_p.append([p_n.p_advance, p_n.p_final_third, p_n.p_shot])
@@ -323,9 +334,14 @@ class ConditionalEngine:
                 )
             else:
                 c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
-                gen_xy = self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps)
+                gen_xy = self.generator.generate(
+                    self.roles, c, self.mask, n_steps=gen_steps,
+                    x_prior=x_prior, max_delta_per_step=max_delta,
+                )
                 probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
                 stds   = None
+
+            prev_xy = gen_xy   # carry forward for next step's prior
 
             deltas = OutcomeProbabilities(
                 p_advance     = probs.p_advance     - baseline.p_advance,

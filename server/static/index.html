@@ -363,6 +363,15 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
             <option value="10">10 (stochastic)</option>
           </select>
         </label>
+        <label class="opt-row" title="Cap per-player movement per step so players flow smoothly instead of teleporting">
+          <span>Continuity</span>
+          <select id="selContinuity" onchange="S.continuity=+this.value" style="margin-left:auto">
+            <option value="0" selected>Off</option>
+            <option value="0.3">Loose (30%)</option>
+            <option value="0.15">Realistic (15%)</option>
+            <option value="0.05">Tight (5%)</option>
+          </select>
+        </label>
       </div>
       <div style="margin-top:6px">
         <button class="btn" id="optBtn" onclick="openOptimizer()"
@@ -511,8 +520,9 @@ const S = {
   playing:    false,
   timer:      null,
   heatmap:    false,
-  adversarial: false,  // Team B uses optimal counter-action
-  nSamples:   1,       // 1 = deterministic; 5/10 = stochastic
+  adversarial:  false,  // Team B uses optimal counter-action
+  nSamples:     1,      // 1 = deterministic; 5/10 = stochastic
+  continuity:   0.0,    // max per-player displacement per step (0 = off)
   commentaryEnabled: true,
 };
 
@@ -912,6 +922,7 @@ async function runSim() {
         minute_per_step: 0.5,
         adversarial:     S.adversarial,
         n_samples:       S.nSamples,
+        continuity:      S.continuity,
       }),
     });
     if (!res.ok) {

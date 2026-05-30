@@ -289,23 +289,33 @@ class TacticalGenerator(nn.Module):
 
     @torch.no_grad()
     def generate(self,
-                 roles:        torch.Tensor,
-                 c:            torch.Tensor,
-                 mask:         torch.Tensor | None = None,
-                 n_steps:      int   = 50,
-                 clamp_pitch:  bool  = True) -> torch.Tensor:
+                 roles:              torch.Tensor,
+                 c:                  torch.Tensor,
+                 mask:               torch.Tensor | None = None,
+                 n_steps:            int          = 50,
+                 clamp_pitch:        bool         = True,
+                 x_prior:            torch.Tensor | None = None,
+                 max_delta_per_step: float | None = None) -> torch.Tensor:
         """
         Generate a freeze frame via Euler ODE integration.
 
         Args:
-            roles    : (B, N, 2) [is_teammate, is_actor] — role assignment
-            c        : (B, cond_dim) conditioning signal
-            mask     : (B, N) bool — True where padded
-            n_steps  : Euler integration steps (more = higher quality)
-            clamp_pitch : if True, clamp output to [0,1] normalized pitch
+            roles              : (B, N, 2) [is_teammate, is_actor]
+            c                  : (B, cond_dim) conditioning signal
+            mask               : (B, N) bool — True where padded
+            n_steps            : Euler integration steps
+            clamp_pitch        : clamp output to [0,1] normalised pitch
+            x_prior            : (B, N, 2) positions from the previous frame.
+                                 When provided alongside max_delta_per_step,
+                                 each player's displacement is capped so the
+                                 simulation is temporally continuous.
+            max_delta_per_step : maximum Euclidean displacement per player per
+                                 step, expressed as a fraction of pitch length
+                                 (e.g. 0.15 = 15%).  No effect when x_prior
+                                 is None.
 
         Returns:
-            x_1 : (B, N, 2) generated player positions (normalized)
+            x_1 : (B, N, 2) generated player positions (normalised)
         """
         B, N, _ = roles.shape
         device  = roles.device
@@ -320,6 +330,17 @@ class TacticalGenerator(nn.Module):
 
         if clamp_pitch:
             x = x.clamp(0.0, 1.0)
+
+        # Temporal continuity: cap per-player displacement from the previous
+        # frame.  Direction toward the generated target is preserved; only the
+        # magnitude is clipped so players can't teleport between steps.
+        if x_prior is not None and max_delta_per_step and max_delta_per_step > 0:
+            x_prior = x_prior.to(device)
+            delta      = x - x_prior                                # (B, N, 2)
+            delta_norm = delta.norm(dim=-1, keepdim=True)           # (B, N, 1)
+            # scale > 1 only when the player exceeds the budget; divide to cap
+            scale      = (delta_norm / max_delta_per_step).clamp(min=1.0)
+            x          = x_prior + delta / scale
 
         return x
 
