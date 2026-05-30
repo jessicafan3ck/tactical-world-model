@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+
+# Claude Code session state
+.claude/
+
+# Raw StatsBomb data (large)
+data/raw/
+
+# Processed data (large)
+data/processed/
+
+# Model checkpoints (large binaries)
+model/checkpoints/*.pt
+model/checkpoints/*.pth
+model/checkpoints/*.ckpt
+
+# Large results
+data/results/**/*.parquet
+data/results/**/*.pt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
