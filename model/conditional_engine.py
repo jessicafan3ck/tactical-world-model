@@ -66,9 +66,10 @@ class ActionResult:
     probs:          OutcomeProbabilities
     prob_deltas:    OutcomeProbabilities      # change vs baseline
     context_after:  dict                     # updated match state
+    prob_stds:      OutcomeProbabilities | None = field(default=None)  # set when n_samples > 1
 
     def to_json_safe(self) -> dict:
-        return {
+        result = {
             "action":     self.action_name,
             "positions":  self.freeze_frame.positions.tolist(),
             "roles":      self.freeze_frame.roles.tolist(),
@@ -77,6 +78,9 @@ class ActionResult:
             "deltas":     self.prob_deltas.to_dict(),
             "context":    self.context_after,
         }
+        if self.prob_stds is not None:
+            result["stds"] = self.prob_stds.to_dict()
+        return result
 
 
 # ── Engine ─────────────────────────────────────────────────────────────────────
@@ -89,6 +93,9 @@ class ConditionalEngine:
     All heavy models are loaded once at __init__ time and kept in memory.
     step() is ~O(generator forward pass) ≈ 30 ms on MPS.
     """
+
+    # Default lookup-table counter-tactics (used when adversarial=False)
+    _RESPONSE_MAP: dict  # populated in __init__ after Action is importable
 
     def __init__(self,
                  sse_path:       Path,
@@ -144,6 +151,21 @@ class ConditionalEngine:
         roles[0, 0,   1] = 1.0   # actor
         self.roles = roles.to(self.device)
         self.mask  = torch.zeros(1, N, dtype=torch.bool, device=self.device)
+
+        from model.action_encoder import Action
+        self._RESPONSE_MAP = {
+            Action.ADVANCE:      Action.LOW_BLOCK,
+            Action.THROUGH_BALL: Action.LOW_BLOCK,
+            Action.SHOOT:        Action.LOW_BLOCK,
+            Action.CROSS:        Action.LOW_BLOCK,
+            Action.DRIBBLE:      Action.LOW_BLOCK,
+            Action.HOLD:         Action.ADVANCE,
+            Action.LOW_BLOCK:    Action.ADVANCE,
+            Action.PRESS:        Action.HOLD,
+            Action.KEEPER_BALL:  Action.PRESS,
+            Action.SWITCH_LEFT:  Action.SWITCH_RIGHT,
+            Action.SWITCH_RIGHT: Action.SWITCH_LEFT,
+        }
 
         print(f"ConditionalEngine ready on {self.device}")
         print(f"  {len(self.fingerprints)} team fingerprints loaded")
@@ -233,42 +255,30 @@ class ConditionalEngine:
         team_id_b:       int,
         gen_steps:       int   = 30,
         minute_per_step: float = 0.5,
+        adversarial:     bool  = False,
+        n_samples:       int   = 1,
+        noise_std:       float = 0.05,
     ) -> list:
         """
         Simulate a user-designed tactical sequence with opposition response.
-
-        Each step applies the attacker's action to z_A and a counter-action to
-        z_B (at 0.5 intensity), generating a freeze frame under both modified
-        fingerprints. Probability deltas are computed vs the pre-sequence baseline.
 
         Args:
             sequence        : list of (Action, alpha) tuples, max 15 steps
             context         : starting MatchContext
             minute_per_step : simulated time per action (default 0.5 min)
+            adversarial     : if True, Team B picks the action that minimises
+                              your P(shot) rather than using the lookup table
+            n_samples       : >1 enables stochastic mode — adds Gaussian noise
+                              to z_A before each step and averages outputs
+            noise_std       : noise magnitude as a fraction of ||z_A|| (0.05 = 5%)
         """
         from model.action_encoder import apply_action, ACTION_LABELS, Action, MatchContext
-
-        RESPONSE = {
-            Action.ADVANCE:      Action.LOW_BLOCK,
-            Action.THROUGH_BALL: Action.LOW_BLOCK,
-            Action.SHOOT:        Action.LOW_BLOCK,
-            Action.CROSS:        Action.LOW_BLOCK,
-            Action.DRIBBLE:      Action.LOW_BLOCK,
-            Action.HOLD:         Action.ADVANCE,
-            Action.LOW_BLOCK:    Action.ADVANCE,
-            Action.PRESS:        Action.HOLD,
-            Action.KEEPER_BALL:  Action.PRESS,
-            Action.SWITCH_LEFT:  Action.SWITCH_RIGHT,
-            Action.SWITCH_RIGHT: Action.SWITCH_LEFT,
-        }
 
         z_A = self.fingerprints.get(team_id_a, self.mean_fp).clone().to(self.device)
         z_B = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
         ctx = context
 
-        # Record original norms so z-space drift is bounded: after each step we
-        # re-normalise back to the team's original fingerprint magnitude, keeping
-        # the direction of the perturbation while staying on the learned manifold.
+        # Bound z-space drift by re-normalising to the team's original ||z||
         norm_A = z_A.norm().clamp(min=1e-8)
         norm_B = z_B.norm().clamp(min=1e-8)
 
@@ -277,24 +287,51 @@ class ConditionalEngine:
 
         for action, alpha in sequence:
             z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, alpha).to(self.device)
-            z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))   # re-project
+            z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))
 
-            def_action = RESPONSE.get(action, Action.HOLD)
-            z_B_mod = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
-            z_B_mod = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))   # re-project
+            def_action = self._choose_defense(action, z_A_mod, z_B, norm_B, ctx, adversarial)
+            z_B_mod    = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+            z_B_mod    = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))
 
-            c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
-            gen_xy = self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps)
+            new_zone   = min(ctx.zone + int(action.value == 0), 3)
+            new_minute = min(ctx.minute + minute_per_step, 90.0)
 
-            probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
+            if n_samples > 1:
+                # Stochastic mode: inject noise into z_A_mod across samples,
+                # average spatial outputs and track probability std.
+                all_xy, all_p = [], []
+                for _ in range(n_samples):
+                    noise   = torch.randn_like(z_A_mod) * noise_std * norm_A
+                    z_noisy = (z_A_mod + noise) * (norm_A / (z_A_mod + noise).norm().clamp(min=1e-8))
+                    c_n     = self._encode_condition(z_noisy, z_B_mod, ctx)
+                    xy_n    = self.generator.generate(self.roles, c_n, self.mask, n_steps=gen_steps)
+                    p_n     = self._run_sse_probs(z_noisy, z_B_mod, ctx)
+                    all_xy.append(xy_n)
+                    all_p.append([p_n.p_advance, p_n.p_final_third, p_n.p_shot])
+
+                gen_xy  = torch.stack(all_xy).mean(0)
+                arr     = np.array(all_p)   # (n_samples, 3)
+                probs   = OutcomeProbabilities(
+                    p_advance     = float(arr[:, 0].mean()),
+                    p_final_third = float(arr[:, 1].mean()),
+                    p_shot        = float(arr[:, 2].mean()),
+                )
+                stds = OutcomeProbabilities(
+                    p_advance     = float(arr[:, 0].std()),
+                    p_final_third = float(arr[:, 1].std()),
+                    p_shot        = float(arr[:, 2].std()),
+                )
+            else:
+                c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
+                gen_xy = self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps)
+                probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
+                stds   = None
+
             deltas = OutcomeProbabilities(
                 p_advance     = probs.p_advance     - baseline.p_advance,
                 p_shot        = probs.p_shot        - baseline.p_shot,
                 p_final_third = probs.p_final_third - baseline.p_final_third,
             )
-
-            new_zone   = min(ctx.zone + int(action.value == 0), 3)
-            new_minute = min(ctx.minute + minute_per_step, 90.0)
 
             results.append(ActionResult(
                 action_name   = ACTION_LABELS[action],
@@ -305,6 +342,7 @@ class ConditionalEngine:
                 ),
                 probs         = probs,
                 prob_deltas   = deltas,
+                prob_stds     = stds,
                 context_after = {
                     "score_diff":       ctx.score_diff,
                     "minute":           round(new_minute, 1),
@@ -315,7 +353,6 @@ class ConditionalEngine:
                 },
             ))
 
-            # Carry forward evolved fingerprints and context
             z_A = z_A_mod
             z_B = z_B_mod
             ctx = MatchContext(
@@ -327,6 +364,81 @@ class ConditionalEngine:
             )
 
         return results
+
+    # ── Sequence optimizer ─────────────────────────────────────────────────────
+
+    @torch.no_grad()
+    def optimize_sequence(
+        self,
+        context:     "MatchContext",
+        team_id_a:   int,
+        team_id_b:   int,
+        max_depth:   int  = 4,
+        beam_width:  int  = 3,
+        adversarial: bool = False,
+    ) -> list[dict]:
+        """
+        Beam search over action sequences to find the highest-P(shot) play.
+
+        At each depth level, every surviving beam node is expanded with all 11
+        actions.  The top `beam_width` candidates (by P(shot)) survive to the
+        next level.  Returns the final beam ranked by P(shot).
+
+        Complexity: O(beam_width × |Actions| × max_depth) SSE evaluations
+                    = 3 × 11 × 4 = 132 at default settings.
+        """
+        from model.action_encoder import apply_action, ACTION_LABELS, Action, MatchContext
+
+        z_A0 = self.fingerprints.get(team_id_a, self.mean_fp).clone().to(self.device)
+        z_B0 = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
+        norm_A = z_A0.norm().clamp(min=1e-8)
+        norm_B = z_B0.norm().clamp(min=1e-8)
+
+        # Beam entry: (p_shot, sequence_list, z_A, z_B, ctx)
+        beam = [(
+            self._run_sse_probs(z_A0, z_B0, context).p_shot,
+            [],
+            z_A0.clone(),
+            z_B0.clone(),
+            context,
+        )]
+
+        for _ in range(max_depth):
+            candidates = []
+            for _, seq, z_A, z_B, ctx in beam:
+                for action in Action:
+                    z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, 1.0).to(self.device)
+                    z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))
+
+                    def_action = self._choose_defense(action, z_A_mod, z_B, norm_B, ctx, adversarial)
+                    z_B_mod    = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+                    z_B_mod    = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))
+
+                    p        = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
+                    new_zone = min(ctx.zone + int(action.value == 0), 3)
+                    new_ctx  = MatchContext(
+                        score_diff = ctx.score_diff,
+                        minute     = min(ctx.minute + 0.5, 90.0),
+                        zone       = new_zone,
+                        phase      = ctx.phase,
+                        poss_team  = ctx.poss_team,
+                    )
+                    candidates.append((
+                        p.p_shot,
+                        seq + [{"action": action.name, "label": ACTION_LABELS[action], "alpha": 1.0,
+                                "defense": ACTION_LABELS[def_action], "p_shot": round(float(p.p_shot), 3)}],
+                        z_A_mod,
+                        z_B_mod,
+                        new_ctx,
+                    ))
+
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            beam = candidates[:beam_width]
+
+        return [
+            {"sequence": seq, "p_shot_final": round(float(p), 3)}
+            for p, seq, *_ in beam
+        ]
 
     # ── Action suggestion ──────────────────────────────────────────────────────
 
@@ -368,6 +480,36 @@ class ConditionalEngine:
         return rows
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _choose_defense(self,
+                        attacker_action: "Action",
+                        z_A_mod:         torch.Tensor,
+                        z_B:             torch.Tensor,
+                        norm_B:          torch.Tensor,
+                        ctx:             "MatchContext",
+                        adversarial:     bool) -> "Action":
+        """
+        Choose Team B's response action.
+
+        adversarial=False: lookup table (fast, one dict get).
+        adversarial=True:  enumerate all 11 actions, pick the one that
+                           minimises Team A's P(shot) — 11 SSE evaluations.
+        """
+        from model.action_encoder import apply_action, Action
+
+        if not adversarial:
+            return self._RESPONSE_MAP.get(attacker_action, Action.HOLD)
+
+        best_action = Action.HOLD
+        best_p_shot = float("inf")
+        for def_a in Action:
+            z_B_try = apply_action(self.action_encoder, z_B, def_a, ctx, 0.5).to(self.device)
+            z_B_try = z_B_try * (norm_B / z_B_try.norm().clamp(min=1e-8))
+            p = self._run_sse_probs(z_A_mod, z_B_try, ctx)
+            if p.p_shot < best_p_shot:
+                best_p_shot = p.p_shot
+                best_action = def_a
+        return best_action
 
     def _encode_condition(self,
                           z_A:     torch.Tensor,

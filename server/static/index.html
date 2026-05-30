@@ -132,6 +132,14 @@ header h1 {
 .q-rm:hover { color: var(--red); }
 .queue-empty { color: var(--muted); font-size: 11px; font-style: italic; padding: 6px 0; text-align: center; }
 .btn-row { display: flex; gap: 6px; }
+.sim-options { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.opt-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.opt-row input[type=checkbox] { accent-color: var(--purple); }
+.opt-row select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 3px; font-size: 11px; padding: 1px 3px; }
+.prob-std { font-size: 9px; color: var(--muted); margin-left: 3px; }
+.opt-result { padding: 8px; border-bottom: 1px solid var(--border); }
+.opt-result-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.opt-step-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 10px; color: var(--text); white-space: nowrap; }
 .btn { flex: 1; padding: 6px 8px; border-radius: 5px; border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; }
 .btn-clear { background: var(--surface2); color: var(--muted); }
 .btn-clear:hover { color: var(--text); }
@@ -342,6 +350,25 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
       <div class="btn-row">
         <button class="btn btn-run" id="runBtn" onclick="runSim()" disabled style="flex:1">&#9654; Run</button>
       </div>
+      <div class="sim-options">
+        <label class="opt-row" title="Team B picks the action that minimises your P(shot) each step">
+          <input type="checkbox" id="chkAdversarial" onchange="S.adversarial=this.checked">
+          <span>Adversarial defense</span>
+        </label>
+        <label class="opt-row" title="Run multiple samples with z-space noise to quantify outcome uncertainty">
+          <span>Samples</span>
+          <select id="selSamples" onchange="S.nSamples=+this.value" style="margin-left:auto">
+            <option value="1" selected>1 (deterministic)</option>
+            <option value="5">5</option>
+            <option value="10">10 (stochastic)</option>
+          </select>
+        </label>
+      </div>
+      <div style="margin-top:6px">
+        <button class="btn" id="optBtn" onclick="openOptimizer()"
+                style="width:100%;background:var(--surface2);color:var(--purple);border-color:var(--purple)"
+                disabled>&#128270; Find best sequence</button>
+      </div>
     </div>
   </aside>
 
@@ -361,6 +388,37 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
         <button class="suggest-close" onclick="document.getElementById('suggestPanel').classList.remove('visible')">&#215;</button>
       </div>
       <div class="suggest-list" id="suggestList"></div>
+    </div>
+
+    <div class="suggest-panel" id="optimizerPanel" style="top:auto;bottom:4px;max-height:360px">
+      <div class="suggest-header">
+        <span>&#128270; Sequence optimizer</span>
+        <button class="suggest-close" onclick="document.getElementById('optimizerPanel').classList.remove('visible')">&#215;</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--muted)">Depth
+          <select id="optDepth" style="margin-left:4px">
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4" selected>4</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <label style="font-size:11px;color:var(--muted)">Beam
+          <select id="optBeam" style="margin-left:4px">
+            <option value="1">1</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+          </select>
+        </label>
+        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="optAdversarial"> Adversarial
+        </label>
+        <button class="btn btn-run" id="optRunBtn" onclick="runOptimizer()" style="margin-left:auto;padding:3px 10px;font-size:11px">Run</button>
+      </div>
+      <div class="suggest-list" id="optimizerResults" style="max-height:260px;overflow-y:auto">
+        <div style="color:var(--muted);font-size:11px;padding:8px">Configure and click Run to find optimal sequences.</div>
+      </div>
     </div>
 
     <div class="commentary" id="commentaryBar">
@@ -447,12 +505,14 @@ const S = {
   teamA: null, teamB: null,
   squadA: [],   // [{jersey_number, name}, ...] sorted by jersey_number for Team A
   squadB: [],   // same for Team B
-  queue:   [],    // [{action, alpha}]
-  frames:  [],    // ActionResult[] returned by /api/simulate_sequence
-  step:    -1,
-  playing: false,
-  timer:   null,
-  heatmap: false,
+  queue:      [],    // [{action, alpha}]
+  frames:     [],    // ActionResult[] returned by /api/simulate_sequence
+  step:       -1,
+  playing:    false,
+  timer:      null,
+  heatmap:    false,
+  adversarial: false,  // Team B uses optimal counter-action
+  nSamples:   1,       // 1 = deterministic; 5/10 = stochastic
   commentaryEnabled: true,
 };
 
@@ -517,7 +577,9 @@ async function loadTeams() {
   } catch(e) { console.error(e); }
 }
 function updateSuggestBtn() {
-  document.getElementById("suggestBtn").disabled = !S.teamA || !S.teamB;
+  const off = !S.teamA || !S.teamB;
+  document.getElementById("suggestBtn").disabled = off;
+  document.getElementById("optBtn").disabled     = off;
 }
 
 async function fetchSquad(teamId, side) {
@@ -641,6 +703,79 @@ function renderSuggest(rows) {
       <button class="suggest-add" onclick="addToQueue('${r.action}');document.getElementById('suggestPanel').classList.remove('visible')" title="Add to sequence">+</button>
     </div>`;
   }).join("");
+}
+
+// ── Optimizer ────────────────────────────────────────────────────────────────
+function openOptimizer() {
+  document.getElementById("optimizerPanel").classList.add("visible");
+}
+
+async function runOptimizer() {
+  if (!S.teamA || !S.teamB) return;
+  const btn     = document.getElementById("optRunBtn");
+  const results = document.getElementById("optimizerResults");
+  btn.disabled  = true;
+  btn.textContent = "Running…";
+  results.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">Searching… this may take a few seconds.</div>';
+
+  const ctx = S.frames.length ? S.frames[S.step].context : {
+    score_diff: +document.getElementById("iScore").value || 0,
+    minute:     +document.getElementById("iMin").value   || 45,
+    zone:       +document.getElementById("iZone").value  || 1,
+    phase:      +document.getElementById("iPhase").value || 0,
+    poss_team:  0,
+  };
+
+  try {
+    const res = await fetch("/api/optimize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        team_id_a:   +S.teamA,
+        team_id_b:   +S.teamB,
+        context:     ctx,
+        max_depth:   +document.getElementById("optDepth").value,
+        beam_width:  +document.getElementById("optBeam").value,
+        adversarial: document.getElementById("optAdversarial").checked,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({detail: res.statusText}))).detail);
+    const data = await res.json();
+    renderOptimizerResults(data.sequences);
+  } catch(e) {
+    results.innerHTML = `<div style="color:var(--red);font-size:11px;padding:8px">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Run";
+  }
+}
+
+function renderOptimizerResults(sequences) {
+  const el = document.getElementById("optimizerResults");
+  if (!sequences.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">No results.</div>';
+    return;
+  }
+  el.innerHTML = sequences.map((s, i) => {
+    const steps = s.sequence.map(step =>
+      `<span class="opt-step-badge" title="Defense: ${step.defense}">${step.label}</span>`
+    ).join(" → ");
+    return `<div class="opt-result">
+      <div class="opt-result-header">
+        <span class="suggest-rank">${i+1}</span>
+        <span style="flex:1;min-width:0">${steps}</span>
+        <span style="color:var(--gold);font-weight:600;white-space:nowrap">P(shot) ${Math.round(s.p_shot_final*100)}%</span>
+      </div>
+      <button class="btn" style="font-size:10px;padding:2px 8px;margin-top:4px;width:100%"
+              onclick='loadOptSequence(${JSON.stringify(s.sequence)})'>&#9654; Load into queue</button>
+    </div>`;
+  }).join("");
+}
+
+function loadOptSequence(steps) {
+  S.queue = steps.map(s => ({ action: s.action, alpha: s.alpha }));
+  redrawQueue();
+  document.getElementById("optimizerPanel").classList.remove("visible");
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
@@ -775,6 +910,8 @@ async function runSim() {
         },
         sequence:        S.queue,
         minute_per_step: 0.5,
+        adversarial:     S.adversarial,
+        n_samples:       S.nSamples,
       }),
     });
     if (!res.ok) {
@@ -844,7 +981,7 @@ function renderFrame(n) {
   badge.classList.add("visible");
   document.querySelectorAll(".tl-step").forEach((el, i) =>
     el.classList.toggle("active", i === n));
-  renderProbs(f.probs, f.deltas);
+  renderProbs(f.probs, f.deltas, f.stds);
   fetchCommentary(f, n);
 }
 
@@ -979,26 +1116,39 @@ async function fetchCommentary(frame, stepIdx) {
 }
 
 // ── Probability bars ──────────────────────────────────────────────────────────
-function renderProbs(p, d) {
+function renderProbs(p, d, stds) {
   if (!p) return;
-  setProb("pAdv",  p.p_advance,     d && d.p_advance);
-  setProb("pShot", p.p_shot,        d && d.p_shot);
-  setProb("pFin",  p.p_final_third, d && d.p_final_third);
+  setProb("pAdv",  p.p_advance,     d && d.p_advance,     stds && stds.p_advance);
+  setProb("pShot", p.p_shot,        d && d.p_shot,        stds && stds.p_shot);
+  setProb("pFin",  p.p_final_third, d && d.p_final_third, stds && stds.p_final_third);
 }
-function setProb(id, val, delta) {
+function setProb(id, val, delta, std) {
   const row  = document.getElementById(id);
   const pct  = row.querySelector(".prob-pct");
   const dEl  = row.querySelector(".prob-delta");
   const fill = row.querySelector(".prob-fill");
+
+  // Remove any previous std badge
+  row.querySelectorAll(".prob-std").forEach(el => el.remove());
+
   pct.textContent  = val != null ? Math.round(val * 100) + "%" : "—";
   fill.style.width = val != null ? Math.round(val * 100) + "%" : "0%";
+
+  if (std != null && std > 0.001) {
+    const badge = document.createElement("span");
+    badge.className = "prob-std";
+    badge.textContent = `±${Math.round(std * 100)}pp`;
+    badge.title = "1-sigma uncertainty across stochastic samples";
+    pct.after(badge);
+  }
+
   if (delta != null) {
     const s = delta >= 0 ? "+" : "";
     dEl.textContent = s + Math.round(delta * 100) + "%";
     dEl.className   = "prob-delta" + (delta > 0.005 ? " pos" : delta < -0.005 ? " neg" : "");
   } else { dEl.textContent = ""; dEl.className = "prob-delta"; }
 }
-function clearProbs() { ["pAdv","pShot","pFin"].forEach(id => setProb(id, null, null)); }
+function clearProbs() { ["pAdv","pShot","pFin"].forEach(id => setProb(id, null, null, null)); }
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 function drawTimeline(frames) {

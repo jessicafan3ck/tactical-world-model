@@ -129,12 +129,24 @@ class SequenceRequest(BaseModel):
     context:         ContextIn
     sequence:        list[SequenceStep]
     minute_per_step: float = 0.5
+    adversarial:     bool  = False   # True → Team B optimises its response
+    n_samples:       int   = 1       # >1 → stochastic mode (Gaussian z-noise)
+    noise_std:       float = 0.05    # noise magnitude as fraction of ||z_A||
 
 
 class SuggestRequest(BaseModel):
     team_id_a: int
     team_id_b: int
     context:   ContextIn
+
+
+class OptimizeRequest(BaseModel):
+    team_id_a:   int
+    team_id_b:   int
+    context:     ContextIn
+    max_depth:   int  = 4    # sequence length to search
+    beam_width:  int  = 3    # candidates kept per depth level
+    adversarial: bool = False
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -309,15 +321,52 @@ async def simulate_sequence(req: SequenceRequest):
         poss_team  = req.context.poss_team,
     )
 
+    if req.n_samples < 1 or req.n_samples > 20:
+        raise HTTPException(400, "n_samples must be between 1 and 20")
+
     frames = _engine.simulate_sequence(
         sequence        = resolved,
         context         = ctx,
         team_id_a       = req.team_id_a,
         team_id_b       = req.team_id_b,
         minute_per_step = req.minute_per_step,
+        adversarial     = req.adversarial,
+        n_samples       = req.n_samples,
+        noise_std       = req.noise_std,
     )
 
     return {"frames": [f.to_json_safe() for f in frames]}
+
+
+@app.post("/api/optimize")
+async def optimize(req: OptimizeRequest):
+    if _engine is None:
+        raise HTTPException(503, "Engine not loaded")
+    if req.team_id_a not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_a={req.team_id_a} not in fingerprints")
+    if req.team_id_b not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_b={req.team_id_b} not in fingerprints")
+    if not (1 <= req.max_depth <= 6):
+        raise HTTPException(400, "max_depth must be 1–6")
+    if not (1 <= req.beam_width <= 5):
+        raise HTTPException(400, "beam_width must be 1–5")
+
+    ctx = MatchContext(
+        score_diff = req.context.score_diff,
+        minute     = req.context.minute,
+        zone       = req.context.zone,
+        phase      = req.context.phase,
+        poss_team  = req.context.poss_team,
+    )
+    results = _engine.optimize_sequence(
+        context     = ctx,
+        team_id_a   = req.team_id_a,
+        team_id_b   = req.team_id_b,
+        max_depth   = req.max_depth,
+        beam_width  = req.beam_width,
+        adversarial = req.adversarial,
+    )
+    return {"sequences": results}
 
 
 @app.post("/api/suggest")
