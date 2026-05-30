@@ -238,11 +238,13 @@ def train_simulator(model: SimulatorRNN,
                 logits   = model(states, fp_home, fp_away, mask)
                 val_loss += simulator_loss(logits, targets, mask).item()
 
-                probs      = torch.sigmoid(logits)
-                valid_mask = ~mask
+                probs       = torch.sigmoid(logits)    # (B, T, 4)
+                valid_mask  = ~mask                    # (B, T)
+                probs_valid = probs[valid_mask]        # (n_valid, 4)
+                tgts_valid  = targets[valid_mask]      # (n_valid, 4)
                 for i in range(4):
-                    all_preds[i].append(probs[valid_mask, i].cpu().numpy())
-                    all_tgts[i].append(targets[valid_mask, i].cpu().numpy())
+                    all_preds[i].append(probs_valid[:, i].cpu().numpy())
+                    all_tgts[i].append(tgts_valid[:, i].cpu().numpy())
 
         val_loss /= len(val_loader)
 
