@@ -64,8 +64,22 @@ MAX_SEQ_LEN     = 6      # max actions per possession to simulate
 
 # ── StatsBomb event → Action mapping ──────────────────────────────────────────
 
+def _etype(event: dict) -> str:
+    t = event.get("type", {})
+    if isinstance(t, dict):
+        return t.get("name", "")
+    if isinstance(t, str):
+        return t
+    return event.get("type_name", "")
+
+
+def _nested(event: dict, key: str) -> dict:
+    v = event.get(key, {})
+    return v if isinstance(v, dict) else {}
+
+
 def event_to_action(event: dict) -> str | None:
-    etype = event.get("type", {}).get("name", "")
+    etype = _etype(event)
     if etype == "Shot":              return "SHOOT"
     if etype == "Dribble":           return "DRIBBLE"
     if etype == "Pressure":          return "PRESS"
@@ -73,14 +87,17 @@ def event_to_action(event: dict) -> str | None:
     if etype == "Goal Keeper":       return "KEEPER_BALL"
     if etype == "Carry":
         loc = event.get("location") or [0, 0]
-        end = (event.get("carry") or {}).get("end_location") or loc
+        end = _nested(event, "carry").get("end_location") or loc
         return "ADVANCE" if end[0] - loc[0] > 5 else "HOLD"
     if etype == "Pass":
-        p   = event.get("pass") or {}
-        if (p.get("technique") or {}).get("name") == "Through Ball": return "THROUGH_BALL"
-        if p.get("cross"):                                             return "CROSS"
+        p   = _nested(event, "pass")
+        tech = _nested(p, "technique")
+        if tech.get("name") == "Through Ball" or event.get("pass_technique_name") == "Through Ball":
+            return "THROUGH_BALL"
+        if p.get("cross") or event.get("pass_cross"):
+            return "CROSS"
         loc = event.get("location") or [0, 0]
-        end = p.get("end_location") or loc
+        end = p.get("end_location") or event.get("pass_end_location") or loc
         if abs(end[1] - loc[1]) > 30 and abs(end[0] - loc[0]) < 20:
             return "SWITCH_LEFT" if end[1] < loc[1] else "SWITCH_RIGHT"
         return "ADVANCE" if end[0] - loc[0] > 10 else "HOLD"
@@ -172,7 +189,7 @@ def main():
             return []
         if match_id not in match_events:
             try:
-                ev = sb.events(match_id=int(match_id), split=True, flatten_attrs=False)
+                ev = sb.events(match_id=int(match_id), flatten_attrs=False)
                 match_events[match_id] = pd.concat(ev.values()) if isinstance(ev, dict) else ev
             except Exception:
                 match_events[match_id] = pd.DataFrame()

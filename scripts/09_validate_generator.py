@@ -117,15 +117,20 @@ def extract_lim_features(positions: torch.Tensor,
 
 
 def positions_to_feature_vector(positions: torch.Tensor,
-                                 mask:      torch.Tensor) -> np.ndarray:
-    """Flat 46-dim feature vector: raw (x,y) of all non-padded players."""
-    valid = positions[~mask]   # (K, 4)
+                                 mask:      torch.Tensor,
+                                 n_cap:     int | None = None) -> np.ndarray:
+    """Flat 46-dim feature vector: raw (x,y) of valid players.
+
+    n_cap lets the caller limit to the first n_cap valid players so that
+    real and generated vectors have the same density and the classifier
+    can only detect spatial differences, not player-count differences.
+    """
+    valid = positions[~mask].cpu()   # (K, 4)
     xy    = valid[:, :2].numpy()
-    # Pad/truncate to 23 players
+    k     = min(len(xy), n_cap if n_cap is not None else 23, 23)
     out   = np.zeros(46, dtype=np.float32)
-    k     = min(len(xy), 23)
-    out[:k*2:2]     = xy[:k, 0]
-    out[1:k*2+1:2]  = xy[:k, 1]
+    out[:k*2:2]    = xy[:k, 0]
+    out[1:k*2+1:2] = xy[:k, 1]
     return out
 
 
@@ -206,9 +211,14 @@ def main():
         real_pos = positions_all[idx]   # (23, 4)
         real_msk = masks_all[idx]       # (23,)
 
+        # Normalise player count: use the real frame's valid player count so
+        # the classifier can only detect spatial differences, not count differences
+        # (engine always generates n_players=22 with no padding).
+        n_valid = int((~real_msk).sum().item())
+
         # Feature vectors for classifier
-        real_feats.append(positions_to_feature_vector(real_pos, real_msk))
-        gen_feats.append(positions_to_feature_vector(gen_pos, gen_msk))
+        real_feats.append(positions_to_feature_vector(real_pos, real_msk, n_cap=n_valid))
+        gen_feats.append(positions_to_feature_vector(gen_pos, gen_msk, n_cap=n_valid))
 
         # LIM probe features
         rf = extract_lim_features(real_pos, real_msk)

@@ -64,9 +64,25 @@ REQUIRED = [CKPT / "sse_best.pt",
 
 # ── StatsBomb event → Action mapping ──────────────────────────────────────────
 
+def _etype(event: dict) -> str:
+    """Extract event type name from either nested or flattened StatsBomb format."""
+    t = event.get("type", {})
+    if isinstance(t, dict):
+        return t.get("name", "")
+    if isinstance(t, str):
+        return t
+    return event.get("type_name", "")
+
+
+def _nested(event: dict, key: str) -> dict:
+    """Return nested sub-dict (e.g. 'pass', 'carry') or {} if missing/string."""
+    v = event.get(key, {})
+    return v if isinstance(v, dict) else {}
+
+
 def event_to_action(event: dict) -> str | None:
     """Map a StatsBomb event dict to one of the 11 Action names, or None."""
-    etype = event.get("type", {}).get("name", "")
+    etype = _etype(event)
 
     if etype == "Shot":
         return "SHOOT"
@@ -81,17 +97,18 @@ def event_to_action(event: dict) -> str | None:
 
     if etype == "Carry":
         loc = event.get("location") or [0, 0]
-        end = (event.get("carry") or {}).get("end_location") or loc
+        end = _nested(event, "carry").get("end_location") or loc
         return "ADVANCE" if end[0] - loc[0] > 5 else "HOLD"
 
     if etype == "Pass":
-        p   = event.get("pass") or {}
-        if (p.get("technique") or {}).get("name") == "Through Ball":
+        p   = _nested(event, "pass")
+        tech = _nested(p, "technique")
+        if tech.get("name") == "Through Ball" or event.get("pass_technique_name") == "Through Ball":
             return "THROUGH_BALL"
-        if p.get("cross"):
+        if p.get("cross") or event.get("pass_cross"):
             return "CROSS"
         loc = event.get("location") or [0, 0]
-        end = p.get("end_location") or loc
+        end = p.get("end_location") or event.get("pass_end_location") or loc
         y_delta = abs(end[1] - loc[1])
         x_delta = end[0] - loc[0]
         if y_delta > 30 and abs(x_delta) < 20:
@@ -175,17 +192,21 @@ def main():
             break
 
         try:
-            events = sb.events(match_id=int(mid), split=True, flatten_attrs=False)
-            # statsbombpy returns a dict of DataFrames or a single DataFrame
-            if isinstance(events, dict):
-                df = pd.concat(events.values(), ignore_index=True)
-            else:
-                df = events
+            df = sb.events(match_id=int(mid), flatten_attrs=False)
+            if isinstance(df, dict):
+                df = pd.concat(df.values(), ignore_index=True)
             # Also fetch 360 freeze frames if available
+            # sb.frames() returns a flat DataFrame (one row per player per event).
+            # Group by event id to build {event_uuid: [player_dict, ...]} lookup.
             try:
-                frames_360 = sb.frames(match_id=int(mid))
-                has_360 = True
+                _f360 = sb.frames(match_id=int(mid))
+                frames_360 = {
+                    eid: grp.to_dict("records")
+                    for eid, grp in _f360.groupby("id")
+                }
+                has_360 = bool(frames_360)
             except Exception:
+                frames_360 = {}
                 has_360 = False
         except Exception as e:
             continue
@@ -212,20 +233,18 @@ def main():
             if eid_before is None or eid_after is None:
                 continue
 
-            ff_before = frames_360.get(eid_before) if isinstance(frames_360, dict) else None
-            ff_after  = frames_360.get(eid_after)  if isinstance(frames_360, dict) else None
-            if ff_before is None or ff_after is None:
+            ff_before = frames_360.get(eid_before)
+            ff_after  = frames_360.get(eid_after)
+            if not ff_before or not ff_after:
                 continue
 
-            pos_before = parse_360_frame(ff_before if isinstance(ff_before, list) else [])
-            pos_after  = parse_360_frame(ff_after  if isinstance(ff_after,  list) else [])
+            pos_before = parse_360_frame(ff_before)
+            pos_after  = parse_360_frame(ff_after)
             if pos_before is None or pos_after is None:
                 continue
 
-            n_b = sum(1 for _ in ff_before if True)
-            n_a = sum(1 for _ in ff_after  if True)
-            mask_b = make_mask(min(n_b, 23))
-            mask_a = make_mask(min(n_a, 23))
+            mask_b = make_mask(min(len(ff_before), 23))
+            mask_a = make_mask(min(len(ff_after),  23))
             ctx_b  = ctx_from_event(row_before.to_dict())
 
             pairs[action_name].append((
