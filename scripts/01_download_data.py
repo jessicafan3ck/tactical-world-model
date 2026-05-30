@@ -25,19 +25,19 @@ OUT  = Path("data/raw/statsbomb")
 # 360 column: True = freeze frames available (confirmed from coverage audit).
 WOMEN_COMPETITIONS = [
     # competition_id, season_id, label, has_360
-    (72,  30,  "Women's World Cup 2023",         True),
-    (72,   6,  "Women's World Cup 2019",         False),
-    (53,  106, "UEFA Women's Euro 2025",         True),
-    (53,   4,  "UEFA Women's Euro 2022",         True),
-    (37,  42,  "FA Women's Super League 2023/24",False),
-    (37,   4,  "FA Women's Super League 2020/21",False),
-    (37,   2,  "FA Women's Super League 2019/20",False),
-    (37,   1,  "FA Women's Super League 2018/19",False),
-    (49,  82,  "NWSL 2023",                      False),
-    (49,   3,  "NWSL 2018",                      False),
-    (211, 107, "Liga F 2023/24",                 False),
-    (183, 106, "Frauen Bundesliga 2023/24",       False),
-    (188, 106, "Serie A Women 2023/24",           False),
+    (72,  107, "Women's World Cup 2023",         True),
+    (72,   30, "Women's World Cup 2019",         False),
+    (53,  315, "UEFA Women's Euro 2025",         True),
+    (53,  106, "UEFA Women's Euro 2022",         True),
+    (37,  281, "FA Women's Super League 2023/24",False),
+    (37,   90, "FA Women's Super League 2020/21",False),
+    (37,   42, "FA Women's Super League 2019/20",False),
+    (37,    4, "FA Women's Super League 2018/19",False),
+    (49,  107, "NWSL 2023",                      False),
+    (49,    3, "NWSL 2018",                      False),
+    (182, 281, "Liga F 2023/24",                 False),
+    (135, 281, "Frauen Bundesliga 2023/24",       False),
+    (131, 281, "Serie A Women 2023/24",           False),
 ]
 
 def fetch_json(url: str, retries: int = 3) -> list | dict | None:
