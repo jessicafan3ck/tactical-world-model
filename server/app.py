@@ -29,8 +29,12 @@ import os
 import sys
 import hashlib
 from pathlib import Path
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Load .env from project root if present (never committed — see .gitignore)
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -125,6 +129,12 @@ class SequenceRequest(BaseModel):
     context:         ContextIn
     sequence:        list[SequenceStep]
     minute_per_step: float = 0.5
+
+
+class SuggestRequest(BaseModel):
+    team_id_a: int
+    team_id_b: int
+    context:   ContextIn
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -252,6 +262,25 @@ async def simulate_sequence(req: SequenceRequest):
     )
 
     return {"frames": [f.to_json_safe() for f in frames]}
+
+
+@app.post("/api/suggest")
+async def suggest(req: SuggestRequest):
+    if _engine is None:
+        raise HTTPException(503, "Engine not loaded")
+    if req.team_id_a not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_a={req.team_id_a} not in fingerprints")
+    if req.team_id_b not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_b={req.team_id_b} not in fingerprints")
+
+    ctx = MatchContext(
+        score_diff = req.context.score_diff,
+        minute     = req.context.minute,
+        zone       = req.context.zone,
+        phase      = req.context.phase,
+        poss_team  = req.context.poss_team,
+    )
+    return {"suggestions": _engine.suggest_action(ctx, req.team_id_a, req.team_id_b)}
 
 
 # ── Commentary ─────────────────────────────────────────────────────────────────

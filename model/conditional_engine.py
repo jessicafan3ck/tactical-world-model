@@ -266,14 +266,22 @@ class ConditionalEngine:
         z_B = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
         ctx = context
 
+        # Record original norms so z-space drift is bounded: after each step we
+        # re-normalise back to the team's original fingerprint magnitude, keeping
+        # the direction of the perturbation while staying on the learned manifold.
+        norm_A = z_A.norm().clamp(min=1e-8)
+        norm_B = z_B.norm().clamp(min=1e-8)
+
         baseline = self._run_sse_probs(z_A, z_B, ctx)
         results  = []
 
         for action, alpha in sequence:
             z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, alpha).to(self.device)
+            z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))   # re-project
 
             def_action = RESPONSE.get(action, Action.HOLD)
             z_B_mod = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+            z_B_mod = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))   # re-project
 
             c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
             gen_xy = self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps)
@@ -319,6 +327,45 @@ class ConditionalEngine:
             )
 
         return results
+
+    # ── Action suggestion ──────────────────────────────────────────────────────
+
+    @torch.no_grad()
+    def suggest_action(self,
+                       context:    "MatchContext",
+                       team_id_a:  int,
+                       team_id_b:  int) -> list[dict]:
+        """
+        Evaluate all 11 actions from the current state and return them ranked
+        by ΔP(shot) — highest first.  Used by the frontend "What next?" panel
+        and the pre-match sequence optimiser.
+        """
+        from model.action_encoder import apply_action, ACTION_LABELS, Action
+
+        z_A = self.fingerprints.get(team_id_a, self.mean_fp).to(self.device)
+        z_B = self.fingerprints.get(team_id_b, self.mean_fp).to(self.device)
+        norm_A = z_A.norm().clamp(min=1e-8)
+
+        baseline = self._run_sse_probs(z_A, z_B, context)
+
+        rows = []
+        for action in Action:
+            z_mod = apply_action(self.action_encoder, z_A, action, context, 1.0).to(self.device)
+            z_mod = z_mod * (norm_A / z_mod.norm().clamp(min=1e-8))
+            p     = self._run_sse_probs(z_mod, z_B, context)
+            rows.append({
+                "action":          action.name,
+                "label":           ACTION_LABELS[action],
+                "p_shot":          round(float(p.p_shot),        3),
+                "p_shot_delta":    round(float(p.p_shot        - baseline.p_shot),        3),
+                "p_advance":       round(float(p.p_advance),     3),
+                "p_advance_delta": round(float(p.p_advance      - baseline.p_advance),     3),
+                "p_final_third":   round(float(p.p_final_third), 3),
+                "p_final_third_delta": round(float(p.p_final_third - baseline.p_final_third), 3),
+            })
+
+        rows.sort(key=lambda r: r["p_shot_delta"], reverse=True)
+        return rows
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -32,3 +32,6 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Secrets — never commit
+.env

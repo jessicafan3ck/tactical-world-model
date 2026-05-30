@@ -139,7 +139,7 @@ header h1 {
 .btn-run:disabled { background: #1f3a24; color: #3a6040; border-color: #1f3a24; cursor: not-allowed; }
 
 /* ── Main area ───────────────────────────────────────────────────── */
-.main { display: grid; grid-template-rows: 1fr auto auto auto auto auto; overflow: hidden; }
+.main { display: grid; grid-template-rows: 1fr auto auto auto auto auto auto; overflow: hidden; }
 
 .pitch-wrap {
   position: relative; overflow: hidden; display: flex;
@@ -220,6 +220,49 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
 .prob-track { height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
 .prob-fill  { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
 
+/* Alpha slider inside queue items */
+.q-alpha {
+  display: none; padding: 4px 6px 2px; background: var(--bg);
+  border-top: 1px solid var(--border); border-radius: 0 0 4px 4px;
+}
+.q-alpha.open { display: block; }
+.q-alpha label { font-size: 9px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.q-alpha input[type=range] { flex: 1; accent-color: var(--blue); cursor: pointer; }
+.q-alpha-val { min-width: 28px; text-align: right; color: var(--text); font-size: 9px; }
+
+/* Suggest panel */
+.suggest-panel {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px 12px;
+  display: none;
+}
+.suggest-panel.visible { display: block; }
+.suggest-header {
+  font-size: 10px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.suggest-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.suggest-list { display: flex; flex-direction: column; gap: 3px; }
+.suggest-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; padding: 3px 0;
+}
+.suggest-rank {
+  width: 16px; text-align: center; color: var(--muted);
+  font-size: 10px; flex-shrink: 0;
+}
+.suggest-name { flex: 1; }
+.suggest-bar-wrap { width: 80px; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
+.suggest-bar { height: 100%; border-radius: 2px; background: var(--green); transition: width 0.3s; }
+.suggest-bar.neg { background: var(--red); }
+.suggest-delta { min-width: 40px; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
+.suggest-delta.pos { color: var(--green); }
+.suggest-delta.neg { color: var(--red); }
+.suggest-add { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 3px; padding: 1px 5px; cursor: pointer; font-size: 9px; }
+.suggest-add:hover { color: var(--text); border-color: var(--blue); }
+
 /* Commentary */
 .commentary {
   padding: 6px 12px;
@@ -290,9 +333,14 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
       <div id="qList" class="queue-list">
         <div class="queue-empty">Click actions above to build a play</div>
       </div>
-      <div class="btn-row">
+      <div class="btn-row" style="margin-bottom:4px">
         <button class="btn btn-clear" onclick="clearAll()">Clear</button>
-        <button class="btn btn-run" id="runBtn" onclick="runSim()" disabled>&#9654; Run</button>
+        <button class="btn" id="suggestBtn" onclick="fetchSuggest()"
+                style="background:var(--surface2);color:var(--purple);border-color:var(--purple)"
+                disabled>&#128161; Suggest</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-run" id="runBtn" onclick="runSim()" disabled style="flex:1">&#9654; Run</button>
       </div>
     </div>
   </aside>
@@ -307,6 +355,14 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
       <div class="loading-overlay" id="loader">Running simulation&hellip;</div>
     </div>
 
+    <div class="suggest-panel" id="suggestPanel">
+      <div class="suggest-header">
+        <span>&#128161; Best next action</span>
+        <button class="suggest-close" onclick="document.getElementById('suggestPanel').classList.remove('visible')">&#215;</button>
+      </div>
+      <div class="suggest-list" id="suggestList"></div>
+    </div>
+
     <div class="commentary" id="commentaryBar">
       <span class="commentary-icon">🎙</span>
       <span class="commentary-text muted" id="commentaryText">Commentary will appear here after simulation runs</span>
@@ -317,6 +373,8 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
       <button class="ctrl" id="btnPlay" onclick="togglePlay()" disabled>&#9654; Play</button>
       <button class="ctrl" id="btnNext" onclick="seek(S.step+1)" disabled>Next &#9654;</button>
       <span class="step-ctr" id="stepCtr">&mdash;</span>
+      <button class="ctrl" id="btnHeat" onclick="toggleHeatmap()" disabled title="Heatmap — player density across all steps">&#128293;</button>
+      <button class="ctrl" onclick="shareURL()" title="Copy shareable link to clipboard">&#128279;</button>
       <select class="speed-sel" id="speedSel">
         <option value="1600">Slow</option>
         <option value="900" selected>Normal</option>
@@ -387,12 +445,13 @@ const KEY_MAP = {
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
   teamA: null, teamB: null,
-  queue:   [],   // [{action, alpha}]
-  frames:  [],   // ActionResult[] returned by /api/simulate_sequence
+  queue:   [],    // [{action, alpha}]
+  frames:  [],    // ActionResult[] returned by /api/simulate_sequence
   step:    -1,
   playing: false,
   timer:   null,
-  commentaryEnabled: true,   // set false if API key absent
+  heatmap: false,
+  commentaryEnabled: true,
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -401,6 +460,7 @@ window.addEventListener("load", async () => {
   resizeCanvas();
   drawEmpty();
   await loadTeams();
+  parseURLSequence();   // restore queue from ?seq= if present
 });
 window.addEventListener("resize", () => {
   resizeCanvas();
@@ -447,9 +507,13 @@ async function loadTeams() {
       sA.value = teams[0].team_id; S.teamA = teams[0].team_id;
       sB.value = teams[1].team_id; S.teamB = teams[1].team_id;
     }
-    sA.onchange = () => { S.teamA = +sA.value || null; };
-    sB.onchange = () => { S.teamB = +sB.value || null; };
+    sA.onchange = () => { S.teamA = +sA.value || null; updateSuggestBtn(); };
+    sB.onchange = () => { S.teamB = +sB.value || null; updateSuggestBtn(); };
+    updateSuggestBtn();
   } catch(e) { console.error(e); }
+}
+function updateSuggestBtn() {
+  document.getElementById("suggestBtn").disabled = !S.teamA || !S.teamB;
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
@@ -459,31 +523,218 @@ function addToQueue(name) {
   redrawQueue();
 }
 function removeStep(i) { S.queue.splice(i, 1); redrawQueue(); }
+
+function setAlpha(i, val) {
+  S.queue[i].alpha = parseFloat(val);
+  const label = document.getElementById(`alpha-val-${i}`);
+  if (label) label.textContent = Math.round(val * 100) + "%";
+}
+
+function toggleAlpha(i) {
+  const el = document.getElementById(`alpha-${i}`);
+  if (el) el.classList.toggle("open");
+}
+
 function redrawQueue() {
   const list = document.getElementById("qList");
   const ctr  = document.getElementById("qCount");
   const run  = document.getElementById("runBtn");
-  ctr.textContent  = S.queue.length ? `(${S.queue.length})` : "";
-  run.disabled     = S.queue.length === 0;
+  const sug  = document.getElementById("suggestBtn");
+  ctr.textContent = S.queue.length ? `(${S.queue.length})` : "";
+  run.disabled = S.queue.length === 0;
+  sug.disabled = !S.teamA || !S.teamB;
   if (!S.queue.length) {
     list.innerHTML = '<div class="queue-empty">Click actions above to build a play</div>';
     return;
   }
   list.innerHTML = S.queue.map((q, i) => {
-    const a = ACTIONS.find(a => a.name === q.action);
-    return `<div class="queue-item">
-      <span class="q-num">${i+1}</span>
-      <span class="q-lbl">${a ? a.label : q.action}</span>
-      <button class="q-rm" onclick="removeStep(${i})">&#215;</button>
+    const a   = ACTIONS.find(a => a.name === q.action);
+    const pct = Math.round(q.alpha * 100);
+    return `<div style="border:1px solid var(--border);border-radius:4px;margin-bottom:2px">
+      <div class="queue-item" style="cursor:pointer" onclick="toggleAlpha(${i})">
+        <span class="q-num">${i+1}</span>
+        <span class="q-lbl">${a ? a.label : q.action}</span>
+        <span style="font-size:9px;color:var(--muted);margin-right:4px">${pct}%</span>
+        <button class="q-rm" onclick="event.stopPropagation();removeStep(${i})">&#215;</button>
+      </div>
+      <div class="q-alpha" id="alpha-${i}">
+        <label>Intensity
+          <input type="range" min="0.1" max="1.0" step="0.1" value="${q.alpha}"
+                 oninput="setAlpha(${i}, this.value)">
+          <span class="q-alpha-val" id="alpha-val-${i}">${pct}%</span>
+        </label>
+      </div>
     </div>`;
   }).join("");
 }
+
 function clearAll() {
-  S.queue = []; S.frames = []; S.step = -1; stopPlay();
+  S.queue = []; S.frames = []; S.step = -1; S.heatmap = false; stopPlay();
   redrawQueue(); drawTimeline([]); clearProbs();
   document.getElementById("badge").classList.remove("visible");
+  document.getElementById("suggestPanel").classList.remove("visible");
+  document.getElementById("btnHeat").classList.remove("active");
+  document.getElementById("btnHeat").disabled = true;
   setCommentary("Commentary will appear here after simulation runs", true);
   updateControls(); drawEmpty();
+}
+
+// ── Suggest ───────────────────────────────────────────────────────────────────
+async function fetchSuggest() {
+  if (!S.teamA || !S.teamB) return;
+  const panel = document.getElementById("suggestPanel");
+  const list  = document.getElementById("suggestList");
+  panel.classList.add("visible");
+  list.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">Loading&hellip;</div>';
+
+  // Use last frame's context if available, otherwise initial inputs
+  const ctx = S.frames.length ? S.frames[S.step].context : {
+    score_diff: +document.getElementById("iScore").value || 0,
+    minute:     +document.getElementById("iMin").value   || 45,
+    zone:       +document.getElementById("iZone").value  || 1,
+    phase:      +document.getElementById("iPhase").value || 0,
+    poss_team:  0,
+  };
+
+  try {
+    const res = await fetch("/api/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ team_id_a: +S.teamA, team_id_b: +S.teamB, context: ctx }),
+    });
+    const data = await res.json();
+    renderSuggest(data.suggestions);
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--red);font-size:11px">${e.message}</div>`;
+  }
+}
+
+function renderSuggest(rows) {
+  const list = document.getElementById("suggestList");
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r.p_shot_delta)), 0.001);
+  list.innerHTML = rows.map((r, i) => {
+    const pos   = r.p_shot_delta >= 0;
+    const sign  = pos ? "+" : "";
+    const pct   = Math.round(Math.abs(r.p_shot_delta) / maxAbs * 100);
+    return `<div class="suggest-row">
+      <span class="suggest-rank">${i+1}</span>
+      <span class="suggest-name">${r.label}</span>
+      <div class="suggest-bar-wrap">
+        <div class="suggest-bar${pos?"":" neg"}" style="width:${pct}%"></div>
+      </div>
+      <span class="suggest-delta ${pos?"pos":"neg"}">${sign}${Math.round(r.p_shot_delta*100)}%</span>
+      <button class="suggest-add" onclick="addToQueue('${r.action}');document.getElementById('suggestPanel').classList.remove('visible')" title="Add to sequence">+</button>
+    </div>`;
+  }).join("");
+}
+
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+function toggleHeatmap() {
+  if (!S.frames.length) return;
+  S.heatmap = !S.heatmap;
+  const btn = document.getElementById("btnHeat");
+  btn.classList.toggle("active", S.heatmap);
+  if (S.heatmap) drawHeatmap(); else renderFrame(S.step);
+}
+
+function drawHeatmap() {
+  resizeCanvas();
+  drawPitch();
+  const canvas = document.getElementById("pitch");
+  const ctx    = canvas.getContext("2d");
+
+  // Accumulate Gaussian blobs on a float grid
+  const W = CW, H = CH;
+  const gridA = new Float32Array(W * H);
+  const gridB = new Float32Array(W * H);
+  const sigma = Math.max(10, CW * 0.022);
+
+  for (const f of S.frames) {
+    for (let i = 0; i < f.positions.length; i++) {
+      if (f.mask[i]) continue;
+      const bx = Math.round(px(f.positions[i][0]));
+      const by = Math.round(py(f.positions[i][1]));
+      const grid = f.roles[i][0] > 0.5 ? gridA : gridB;
+      // Splat a small Gaussian
+      const r = Math.round(sigma * 2);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = bx + dx, ny = by + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const v = Math.exp(-(dx*dx + dy*dy) / (2 * sigma * sigma));
+          grid[ny * W + nx] += v;
+        }
+      }
+    }
+  }
+
+  // Render as semi-transparent overlay
+  const imgData = ctx.createImageData(W, H);
+  const maxA = Math.max(...gridA) || 1;
+  const maxB = Math.max(...gridB) || 1;
+  for (let i = 0; i < W * H; i++) {
+    const a = gridA[i] / maxA;
+    const b = gridB[i] / maxB;
+    const idx = i * 4;
+    imgData.data[idx]   = Math.round(88  * b + 240 * a);  // R: blue→gold
+    imgData.data[idx+1] = Math.round(166 * b + 192 * a);  // G
+    imgData.data[idx+2] = Math.round(255 * b + 64  * a);  // B
+    imgData.data[idx+3] = Math.round(Math.min((a + b) * 180, 200));
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Re-draw pitch lines on top
+  const pitchCanvas = document.createElement("canvas");
+  pitchCanvas.width = W; pitchCanvas.height = H;
+  const pCtx = pitchCanvas.getContext("2d");
+  // Just the lines, transparent background
+  drawPitchLines(pCtx);
+  ctx.drawImage(pitchCanvas, 0, 0);
+}
+
+function drawPitchLines(ctx) {
+  const P = 0.04;
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth   = 1.2;
+  ctx.strokeRect(px(P), py(P), px(1-2*P), py(1-2*P));
+  ctx.beginPath(); ctx.moveTo(px(0.5), py(P)); ctx.lineTo(px(0.5), py(1-P)); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px(0.5), py(0.5), px(0.087), 0, 2*Math.PI); ctx.stroke();
+  const [paW, paH, paT] = [0.157, 0.593, (1-0.593)/2];
+  ctx.strokeRect(px(P), py(paT), px(paW), py(paH));
+  ctx.strokeRect(px(1-P-paW), py(paT), px(paW), py(paH));
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.setLineDash([5,5]);
+  [1/3, 2/3].forEach(x => {
+    ctx.beginPath(); ctx.moveTo(px(x), py(P)); ctx.lineTo(px(x), py(1-P)); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+}
+
+// ── Share URL ─────────────────────────────────────────────────────────────────
+function shareURL() {
+  if (!S.queue.length) { alert("Build a sequence first."); return; }
+  const seq = S.queue.map(q => `${q.action}:${q.alpha}`).join(",");
+  const url = `${location.origin}${location.pathname}?seq=${encodeURIComponent(seq)}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.currentTarget;
+    const orig = btn.innerHTML;
+    btn.innerHTML = "&#10003;";
+    setTimeout(() => { btn.innerHTML = orig; }, 1500);
+  });
+}
+
+function parseURLSequence() {
+  const params = new URLSearchParams(location.search);
+  const seq    = params.get("seq");
+  if (!seq) return;
+  for (const part of seq.split(",")) {
+    const [name, alpha] = part.split(":");
+    const action = ACTIONS.find(a => a.name === name);
+    if (action && S.queue.length < 12) {
+      S.queue.push({ action: name, alpha: parseFloat(alpha) || 1.0 });
+    }
+  }
+  if (S.queue.length) redrawQueue();
 }
 
 // ── Simulation ────────────────────────────────────────────────────────────────
@@ -516,10 +767,12 @@ async function runSim() {
       throw new Error(err.detail || "Server error");
     }
     const data = await res.json();
-    S.frames = data.frames; S.step = 0;
+    S.frames = data.frames; S.step = 0; S.heatmap = false;
     drawTimeline(S.frames);
     renderFrame(0);
     updateControls();
+    document.getElementById("btnHeat").disabled = false;
+    document.getElementById("btnHeat").classList.remove("active");
   } catch(e) {
     alert("Simulation failed: " + e.message);
   } finally {
@@ -532,6 +785,7 @@ async function runSim() {
 function seek(n) {
   if (!S.frames.length) return;
   S.step = Math.max(0, Math.min(n, S.frames.length - 1));
+  if (S.heatmap) { S.heatmap = false; document.getElementById("btnHeat").classList.remove("active"); }
   renderFrame(S.step); updateControls();
 }
 function togglePlay() { S.playing ? stopPlay() : startPlay(); }
