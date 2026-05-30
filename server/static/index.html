@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tactical World Model — Interactive</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 1.1rem; letter-spacing: 0.05em; color: #58a6ff; }
+
+    /* ── Layout ───────────────────────────────────────────── */
+    #main-grid {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 16px;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    /* ── Pitch ────────────────────────────────────────────── */
+    #pitch-wrap {
+      position: relative;
+      background: #1a3a2a;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #30363d;
+    }
+    #pitch { display: block; width: 100%; }
+
+    /* ── Side panel ───────────────────────────────────────── */
+    #panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .card h2 { font-size: 0.75rem; text-transform: uppercase;
+               letter-spacing: 0.08em; color: #8b949e; margin-bottom: 8px; }
+
+    /* ── Team picker ──────────────────────────────────────── */
+    select {
+      width: 100%;
+      background: #0d1117;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+    }
+
+    /* ── Probability bars ─────────────────────────────────── */
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .prob-label { width: 72px; font-size: 0.75rem; color: #8b949e; flex-shrink: 0; }
+    .prob-track {
+      flex: 1;
+      height: 8px;
+      background: #21262d;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .prob-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.35s ease;
+    }
+    .prob-fill.shot    { background: #f78166; }
+    .prob-fill.advance { background: #3fb950; }
+    .prob-fill.third   { background: #58a6ff; }
+    .prob-value { width: 38px; font-size: 0.75rem; text-align: right; }
+    .delta { font-size: 0.7rem; width: 42px; text-align: right; }
+    .delta.pos { color: #3fb950; }
+    .delta.neg { color: #f78166; }
+
+    /* ── Action log ───────────────────────────────────────── */
+    #log-list {
+      list-style: none;
+      max-height: 140px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
+    #log-list li { padding: 2px 0; border-bottom: 1px solid #21262d; }
+    #log-list li span { color: #e6edf3; }
+
+    /* ── Controls reference ───────────────────────────────── */
+    .kbd-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      font-size: 0.68rem;
+    }
+    .kbd {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 4px 2px;
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.1s;
+    }
+    .kbd:hover, .kbd.active { background: #58a6ff; color: #0d1117; }
+    .kbd .key  { font-weight: 700; display: block; font-size: 0.8rem; }
+    .kbd .desc { color: #8b949e; font-size: 0.62rem; display: block; }
+    .kbd:hover .desc, .kbd.active .desc { color: #0d1117; }
+
+    /* ── Context bar ──────────────────────────────────────── */
+    #context-bar {
+      display: flex;
+      gap: 12px;
+      font-size: 0.75rem;
+      color: #8b949e;
+    }
+    #context-bar span { color: #e6edf3; }
+
+    /* ── Touch action grid (mobile) ───────────────────────── */
+    #touch-grid {
+      display: none;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      width: 100%;
+      max-width: 400px;
+    }
+    .touch-btn {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 10px 4px;
+      text-align: center;
+      font-size: 0.7rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .touch-btn:active { background: #58a6ff; color: #0d1117; }
+
+    @media (max-width: 700px) {
+      #main-grid { grid-template-columns: 1fr; }
+      #touch-grid { display: grid; }
+    }
+
+    #status { font-size: 0.75rem; color: #8b949e; }
+    #status.loading { color: #d29922; }
+    #status.error   { color: #f78166; }
+  </style>
+</head>
+<body>
+
+<h1>Tactical World Model &mdash; Interactive Play</h1>
+
+<div id="main-grid">
+  <!-- Pitch canvas -->
+  <div id="pitch-wrap">
+    <canvas id="pitch" width="840" height="560"></canvas>
+  </div>
+
+  <!-- Side panel -->
+  <div id="panel">
+
+    <!-- Team picker -->
+    <div class="card">
+      <h2>Teams</h2>
+      <select id="sel-home"></select>
+      <select id="sel-away"></select>
+      <div id="context-bar">
+        <div>Min: <span id="ctx-min">0</span></div>
+        <div>Score: <span id="ctx-score">0–0</span></div>
+        <div>Zone: <span id="ctx-zone">1</span></div>
+      </div>
+    </div>
+
+    <!-- Probabilities -->
+    <div class="card">
+      <h2>Outcome Probabilities</h2>
+      <div class="prob-row">
+        <div class="prob-label">Shot</div>
+        <div class="prob-track"><div class="prob-fill shot" id="bar-shot" style="width:0%"></div></div>
+        <div class="prob-value" id="val-shot">—</div>
+        <div class="delta" id="delta-shot"></div>
+      </div>
+      <div class="prob-row">
+        <div class="prob-label">Advance</div>
+        <div class="prob-track"><div class="prob-fill advance" id="bar-advance" style="width:0%"></div></div>
+        <div class="prob-value" id="val-advance">—</div>
+        <div class="delta" id="delta-advance"></div>
+      </div>
+      <div class="prob-row">
+        <div class="prob-label">Final third</div>
+        <div class="prob-track"><div class="prob-fill third" id="bar-third" style="width:0%"></div></div>
+        <div class="prob-value" id="val-third">—</div>
+        <div class="delta" id="delta-third"></div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <h2>Controls (keyboard / click)</h2>
+      <div class="kbd-grid" id="kbd-grid">
+        <div class="kbd" data-key="w"><span class="key">W/↑</span><span class="desc">Advance</span></div>
+        <div class="kbd" data-key="s"><span class="key">S/↓</span><span class="desc">Hold</span></div>
+        <div class="kbd" data-key="a"><span class="key">A/←</span><span class="desc">Sw. Left</span></div>
+        <div class="kbd" data-key="d"><span class="key">D/→</span><span class="desc">Sw. Right</span></div>
+        <div class="kbd" data-key="space"><span class="key">SPC</span><span class="desc">Shoot</span></div>
+        <div class="kbd" data-key="e"><span class="key">E</span><span class="desc">Dribble</span></div>
+        <div class="kbd" data-key="t"><span class="key">T</span><span class="desc">Through</span></div>
+        <div class="kbd" data-key="c"><span class="key">C</span><span class="desc">Cross</span></div>
+        <div class="kbd" data-key="p"><span class="key">P</span><span class="desc">Press</span></div>
+        <div class="kbd" data-key="l"><span class="key">L</span><span class="desc">Low blk</span></div>
+        <div class="kbd" data-key="g"><span class="key">G</span><span class="desc">Play out</span></div>
+      </div>
+    </div>
+
+    <!-- Action log -->
+    <div class="card">
+      <h2>Action Log</h2>
+      <ul id="log-list"></ul>
+    </div>
+
+  </div>
+</div>
+
+<!-- Touch grid (mobile) -->
+<div id="touch-grid">
+  <div class="touch-btn" data-key="w">↑ Advance</div>
+  <div class="touch-btn" data-key="s">↓ Hold</div>
+  <div class="touch-btn" data-key="a">← Left</div>
+  <div class="touch-btn" data-key="d">→ Right</div>
+  <div class="touch-btn" data-key="space">⚽ Shoot</div>
+  <div class="touch-btn" data-key="e">🏃 Dribble</div>
+  <div class="touch-btn" data-key="t">🎯 Through</div>
+  <div class="touch-btn" data-key="c">↗ Cross</div>
+  <div class="touch-btn" data-key="p">⚡ Press</div>
+  <div class="touch-btn" data-key="l">🛡 Low blk</div>
+  <div class="touch-btn" data-key="g">🧤 Play out</div>
+</div>
+
+<div id="status">Loading teams…</div>
+
+<script>
+/* ── State ──────────────────────────────────────────────────────────────────── */
+const state = {
+  teamIdA: null,
+  teamIdB: null,
+  context: { score_diff: 0, minute: 0, zone: 1, phase: 0, poss_team: 0 },
+  positions: null,   // (N, 2) normalised
+  roles: null,       // (N, 2)
+  mask: null,        // (N,) bool
+  busy: false,
+};
+
+/* ── Canvas setup ───────────────────────────────────────────────────────────── */
+const canvas  = document.getElementById('pitch');
+const ctx2d   = canvas.getContext('2d');
+const PW      = canvas.width;
+const PH      = canvas.height;
+const PITCH_W = 120, PITCH_H = 80;    // StatsBomb dimensions
+
+function pitchToCanvas(x, y) {
+  return [x / PITCH_W * PW, (1 - y / PITCH_H) * PH];
+}
+function normToCanvas(nx, ny) {
+  return pitchToCanvas(nx * PITCH_W, ny * PITCH_H);
+}
+
+/* ── Pitch drawing ──────────────────────────────────────────────────────────── */
+function drawPitch() {
+  ctx2d.fillStyle = '#1a3a2a';
+  ctx2d.fillRect(0, 0, PW, PH);
+
+  ctx2d.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx2d.lineWidth = 1.5;
+
+  // Outline
+  ctx2d.strokeRect(2, 2, PW-4, PH-4);
+
+  // Halfway line
+  const [hx] = pitchToCanvas(PITCH_W/2, 0);
+  ctx2d.beginPath(); ctx2d.moveTo(hx, 2); ctx2d.lineTo(hx, PH-2); ctx2d.stroke();
+
+  // Centre circle
+  const [cx, cy] = pitchToCanvas(PITCH_W/2, PITCH_H/2);
+  const r = 9.15 / PITCH_W * PW;
+  ctx2d.beginPath(); ctx2d.arc(cx, cy, r, 0, Math.PI*2); ctx2d.stroke();
+
+  // Penalty boxes
+  for (const [xStart, dir] of [[0, 1], [PITCH_W, -1]]) {
+    const bx = xStart + dir*16.5, by1 = PITCH_H/2 - 20.16, by2 = PITCH_H/2 + 20.16;
+    const [ax, ay1] = pitchToCanvas(Math.min(xStart, bx), by2);
+    const bW = 16.5 / PITCH_W * PW;
+    const bH = 40.32 / PITCH_H * PH;
+    ctx2d.strokeRect(dir > 0 ? 2 : PW - bW - 2, ay1, bW, bH);
+  }
+
+  // Zone lines (faint)
+  ctx2d.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx2d.setLineDash([6, 4]);
+  for (const xPitch of [40, 80, 102]) {
+    const [zx] = pitchToCanvas(xPitch, 0);
+    ctx2d.beginPath(); ctx2d.moveTo(zx, 0); ctx2d.lineTo(zx, PH); ctx2d.stroke();
+  }
+  ctx2d.setLineDash([]);
+}
+
+function drawPlayers(positions, roles, mask) {
+  if (!positions) return;
+  for (let i = 0; i < positions.length; i++) {
+    if (mask[i]) continue;
+    const [px, py] = normToCanvas(positions[i][0], positions[i][1]);
+    const isTm  = roles[i][0] > 0.5;
+    const isAct = roles[i][1] > 0.5;
+
+    ctx2d.beginPath();
+    ctx2d.arc(px, py, isAct ? 10 : 7, 0, Math.PI*2);
+
+    if (isAct) {
+      ctx2d.fillStyle = '#f9c74f';
+      ctx2d.fill();
+      ctx2d.strokeStyle = '#000';
+      ctx2d.lineWidth = 1.5;
+      ctx2d.stroke();
+    } else if (isTm) {
+      ctx2d.fillStyle = '#90e0ef';
+      ctx2d.fill();
+    } else {
+      ctx2d.fillStyle = '#e63946';
+      ctx2d.fill();
+    }
+  }
+}
+
+function render() {
+  drawPitch();
+  drawPlayers(state.positions, state.roles, state.mask);
+}
+
+/* ── API helpers ────────────────────────────────────────────────────────────── */
+async function loadTeams() {
+  const res = await fetch('/api/teams');
+  const teams = await res.json();
+
+  const selH = document.getElementById('sel-home');
+  const selA = document.getElementById('sel-away');
+  for (const t of teams) {
+    const opt = new Option(t.team_name, t.team_id);
+    selH.add(opt.cloneNode(true));
+    selA.add(opt);
+  }
+  // Default: first two teams
+  state.teamIdA = teams[0]?.team_id;
+  state.teamIdB = teams[1]?.team_id;
+  selH.value = state.teamIdA;
+  selA.value = state.teamIdB;
+
+  setStatus('Ready — press a key or click an action', '');
+}
+
+async function sendAction(key) {
+  if (state.busy || !state.teamIdA || !state.teamIdB) return;
+  state.busy = true;
+  setStatus('Generating…', 'loading');
+  flashKey(key);
+
+  const body = {
+    action:    key,
+    team_id_a: state.teamIdA,
+    team_id_b: state.teamIdB,
+    context:   { ...state.context },
+  };
+
+  try {
+    const res  = await fetch('/api/step', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+    applyResult(data);
+    setStatus('Ready', '');
+  } catch (err) {
+    setStatus(`Error: ${err.message}`, 'error');
+  } finally {
+    state.busy = false;
+  }
+}
+
+/* ── Result application ─────────────────────────────────────────────────────── */
+function applyResult(data) {
+  state.positions = data.positions;
+  state.roles     = data.roles;
+  state.mask      = data.mask;
+
+  // Update context for next step
+  if (data.context) {
+    state.context = { ...state.context, ...data.context };
+    document.getElementById('ctx-min').textContent   = Math.floor(state.context.minute);
+    document.getElementById('ctx-zone').textContent  = state.context.zone;
+    const gh = Math.max(0, state.context.score_diff);
+    const ga = Math.max(0, -state.context.score_diff);
+    document.getElementById('ctx-score').textContent = `${gh}–${ga}`;
+  }
+
+  updateProbs(data.probs, data.deltas);
+  logAction(data.action, data.probs);
+  render();
+}
+
+function updateProbs(probs, deltas) {
+  const entries = [
+    ['shot',    probs.p_shot,        deltas.p_shot,        'bar-shot',    'val-shot',    'delta-shot'],
+    ['advance', probs.p_advance,     deltas.p_advance,     'bar-advance', 'val-advance', 'delta-advance'],
+    ['third',   probs.p_final_third, deltas.p_final_third, 'bar-third',   'val-third',   'delta-third'],
+  ];
+  for (const [, val, delta, barId, valId, deltaId] of entries) {
+    document.getElementById(barId).style.width  = `${(val * 100).toFixed(1)}%`;
+    document.getElementById(valId).textContent  = (val * 100).toFixed(1) + '%';
+    const dEl  = document.getElementById(deltaId);
+    const sign = delta >= 0 ? '+' : '';
+    dEl.textContent  = sign + (delta * 100).toFixed(1) + '%';
+    dEl.className    = 'delta ' + (delta >= 0 ? 'pos' : 'neg');
+  }
+}
+
+function logAction(actionName, probs) {
+  const li  = document.createElement('li');
+  li.innerHTML = `<span>${actionName}</span> — shot ${(probs.p_shot*100).toFixed(1)}%`;
+  const list = document.getElementById('log-list');
+  list.prepend(li);
+  while (list.children.length > 20) list.lastChild.remove();
+}
+
+/* ── UI helpers ─────────────────────────────────────────────────────────────── */
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className   = cls;
+}
+
+function flashKey(key) {
+  const el = document.querySelector(`[data-key="${key}"]`);
+  if (!el) return;
+  el.classList.add('active');
+  setTimeout(() => el.classList.remove('active'), 200);
+}
+
+/* ── Event listeners ────────────────────────────────────────────────────────── */
+document.getElementById('sel-home').addEventListener('change', e => {
+  state.teamIdA = parseInt(e.target.value);
+});
+document.getElementById('sel-away').addEventListener('change', e => {
+  state.teamIdB = parseInt(e.target.value);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const key = e.key === ' ' ? 'space' : e.key.toLowerCase()
+              .replace('arrowup','w').replace('arrowdown','s')
+              .replace('arrowleft','a').replace('arrowright','d');
+  const validKeys = ['w','s','a','d','space','e','t','c','p','l','g'];
+  if (validKeys.includes(key)) {
+    e.preventDefault();
+    sendAction(key);
+  }
+});
+
+document.querySelectorAll('.kbd, .touch-btn').forEach(el => {
+  el.addEventListener('click', () => sendAction(el.dataset.key));
+  el.addEventListener('touchend', e => { e.preventDefault(); sendAction(el.dataset.key); });
+});
+
+/* ── Boot ───────────────────────────────────────────────────────────────────── */
+render();
+loadTeams().catch(err => setStatus(`Failed to load teams: ${err.message}`, 'error'));
+</script>
+</body>
+</html>
