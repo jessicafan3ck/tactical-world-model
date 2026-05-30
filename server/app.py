@@ -173,6 +173,62 @@ async def list_teams():
     return teams
 
 
+@app.get("/api/squad/{team_id}")
+async def squad(team_id: int):
+    """Return the starting XI for a team, sorted by jersey number.
+
+    Uses the first match in possession_meta where this team appears, then
+    fetches the StatsBomb lineup.  Returns a list ordered by jersey_number so
+    the frontend can map x-sort rank → player name.
+    """
+    if not META.exists():
+        raise HTTPException(404, "No possession metadata available")
+
+    import pandas as pd
+    from statsbombpy import sb as sbpy
+
+    meta = pd.read_csv(META, usecols=["team_id", "match_id"], low_memory=False)
+    rows = meta[meta["team_id"] == team_id]["match_id"].unique()
+    if not len(rows):
+        raise HTTPException(404, f"No matches found for team_id={team_id}")
+
+    match_id = int(rows[0])
+    team_name = _team_names.get(team_id, "")
+
+    try:
+        lineups = sbpy.lineups(match_id=match_id)
+    except Exception as e:
+        raise HTTPException(502, f"StatsBomb lineup fetch failed: {e}")
+
+    # Find the matching team lineup by name
+    lineup_df = lineups.get(team_name)
+    if lineup_df is None:
+        # Fuzzy fallback: pick the entry whose name most overlaps ours
+        for tname, df in lineups.items():
+            if team_name.lower() in tname.lower() or tname.lower() in team_name.lower():
+                lineup_df = df
+                break
+    if lineup_df is None:
+        raise HTTPException(404, f"Could not find lineup for '{team_name}' in match {match_id}")
+
+    def _is_starter(positions):
+        if not isinstance(positions, list):
+            return False
+        return any(p.get("start_reason") == "Starting XI" for p in positions)
+
+    starters = lineup_df[lineup_df["positions"].apply(_is_starter)]
+    starters = starters.sort_values("jersey_number").head(11)
+
+    return {
+        "team_id":   team_id,
+        "team_name": team_name,
+        "squad": [
+            {"jersey_number": int(row["jersey_number"]), "name": row["player_name"]}
+            for _, row in starters.iterrows()
+        ],
+    }
+
+
 @app.get("/api/actions")
 async def list_actions():
     return [
@@ -286,19 +342,28 @@ async def suggest(req: SuggestRequest):
 # ── Commentary ─────────────────────────────────────────────────────────────────
 
 class CommentaryRequest(BaseModel):
-    action:           str
-    defense_response: str
-    team_name_a:      str
-    team_name_b:      str
-    p_shot:           float
-    p_shot_delta:     float
-    p_advance:        float
-    p_advance_delta:  float
-    minute:           float
-    zone:             int
-    score_diff:       float
-    step_num:         int
-    total_steps:      int
+    action:             str
+    defense_response:   str
+    team_name_a:        str
+    team_name_b:        str
+    p_shot:             float
+    p_shot_delta:       float
+    p_advance:          float
+    p_advance_delta:    float
+    minute:             float
+    zone:               int
+    score_diff:         float
+    step_num:           int
+    total_steps:        int
+    # Player-level context (populated from canvas shirt-number logic)
+    actor_num:          int | None  = None   # shirt number of player on the ball
+    actor_name:         str | None  = None   # real player name if squad loaded
+    actor_position:     str         = ""     # e.g. "right flank, attacking third"
+    nearest_defenders:  list[int]   = []     # shirt numbers of closest 2 opponents
+    defender_names:     list[str]   = []     # real names of nearest defenders
+    striker_num:        int | None  = None   # most advanced teammate (likely receiver)
+    striker_name:       str | None  = None   # real name of striker
+    second_runner:      int | None  = None   # second-most advanced teammate
 
 
 @app.post("/api/commentary")
@@ -307,10 +372,12 @@ async def commentary(req: CommentaryRequest):
     if not api_key:
         return {"commentary": "", "available": False}
 
-    # Stable cache key — same inputs always hit the same cached line
+    # Cache key includes player numbers so different spatial situations
+    # generate different commentary even for the same abstract action
     raw = (f"{req.action}|{req.defense_response}|{req.team_name_a}|{req.team_name_b}"
            f"|{req.p_shot:.3f}|{req.p_shot_delta:.3f}|{req.zone}|{req.minute:.0f}"
-           f"|{req.score_diff:.0f}")
+           f"|{req.score_diff:.0f}|{req.actor_num}|{req.actor_position}"
+           f"|{req.nearest_defenders}|{req.striker_num}")
     cache_key = hashlib.md5(raw.encode()).hexdigest()
     if cache_key in _commentary_cache:
         return {"commentary": _commentary_cache[cache_key], "available": True}
@@ -323,18 +390,52 @@ async def commentary(req: CommentaryRequest):
     zone_names = {0: "own half", 1: "midfield", 2: "attacking third", 3: "penalty area"}
     zone_str   = zone_names.get(req.zone, f"zone {req.zone}")
     delta_str  = (
-        f"P(shot) {'rose' if req.p_shot_delta >= 0 else 'fell'} "
+        f"shot probability {'rose' if req.p_shot_delta >= 0 else 'fell'} "
         f"{abs(req.p_shot_delta)*100:.0f}pp to {req.p_shot*100:.0f}%"
     )
 
+    # Build player-specific lines, preferring real names over shirt numbers
+    def _player_ref(name: str | None, num: int | None) -> str:
+        if name:
+            return f"{name} (#{num})" if num else name
+        if num:
+            return f"#{num}"
+        return "the ball carrier"
+
+    player_lines = []
+    if req.actor_num or req.actor_name:
+        actor_ref = _player_ref(req.actor_name, req.actor_num)
+        loc = f" ({req.actor_position})" if req.actor_position else ""
+        player_lines.append(f"{actor_ref}{loc} is on the ball.")
+    if req.nearest_defenders or req.defender_names:
+        if req.defender_names:
+            pairs = [_player_ref(n, req.nearest_defenders[i] if i < len(req.nearest_defenders) else None)
+                     for i, n in enumerate(req.defender_names)]
+        else:
+            pairs = [f"#{n}" for n in req.nearest_defenders]
+        player_lines.append(f"Nearest defenders: {' and '.join(pairs)}.")
+    if req.striker_num or req.striker_name:
+        runner_ref = _player_ref(req.striker_name, req.striker_num)
+        player_lines.append(f"Runner ahead: {runner_ref}.")
+    player_ctx = " ".join(player_lines)
+
+    has_names = bool(req.actor_name or req.defender_names or req.striker_name)
+    name_instruction = (
+        "Use the players' real names (given above) — do not replace them with generic phrases."
+        if has_names else
+        "Reference the specific shirt numbers — do not use generic phrases like 'the attacker'."
+    )
+
     prompt = (
-        f"You are a concise football analyst. "
-        f"Write exactly one sentence (max 30 words) of live tactical commentary.\n\n"
-        f"Situation: {req.team_name_a} vs {req.team_name_b}, "
-        f"minute {req.minute:.0f}, {score_str}, in the {zone_str}.\n"
-        f"Step {req.step_num} of {req.total_steps}: {req.team_name_a} plays {req.action}. "
-        f"Defense responds: {req.defense_response}. {delta_str}.\n\n"
-        f"Commentary (one sentence, no filler phrases like 'in a bold move'):"
+        f"You are a football analyst providing live match commentary. "
+        f"Write exactly one sentence (max 35 words). {name_instruction}\n\n"
+        f"Match: {req.team_name_a} vs {req.team_name_b}, "
+        f"minute {req.minute:.0f}, {score_str}.\n"
+        f"Action (step {req.step_num}/{req.total_steps}): "
+        f"{req.team_name_a} plays {req.action} in the {zone_str}.\n"
+        f"{player_ctx}\n"
+        f"Defense responds with: {req.defense_response}. {delta_str}.\n\n"
+        f"Commentary:"
     )
 
     try:

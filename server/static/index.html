@@ -445,6 +445,8 @@ const KEY_MAP = {
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
   teamA: null, teamB: null,
+  squadA: [],   // [{jersey_number, name}, ...] sorted by jersey_number for Team A
+  squadB: [],   // same for Team B
   queue:   [],    // [{action, alpha}]
   frames:  [],    // ActionResult[] returned by /api/simulate_sequence
   step:    -1,
@@ -506,14 +508,27 @@ async function loadTeams() {
     if (teams.length >= 2) {
       sA.value = teams[0].team_id; S.teamA = teams[0].team_id;
       sB.value = teams[1].team_id; S.teamB = teams[1].team_id;
+      fetchSquad(S.teamA, "A");
+      fetchSquad(S.teamB, "B");
     }
-    sA.onchange = () => { S.teamA = +sA.value || null; updateSuggestBtn(); };
-    sB.onchange = () => { S.teamB = +sB.value || null; updateSuggestBtn(); };
+    sA.onchange = () => { S.teamA = +sA.value || null; updateSuggestBtn(); if (S.teamA) fetchSquad(S.teamA, "A"); };
+    sB.onchange = () => { S.teamB = +sB.value || null; updateSuggestBtn(); if (S.teamB) fetchSquad(S.teamB, "B"); };
     updateSuggestBtn();
   } catch(e) { console.error(e); }
 }
 function updateSuggestBtn() {
   document.getElementById("suggestBtn").disabled = !S.teamA || !S.teamB;
+}
+
+async function fetchSquad(teamId, side) {
+  try {
+    const res = await fetch(`/api/squad/${teamId}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    // squad is already sorted by jersey_number; index 0 = rank 1 (GK), etc.
+    if (side === "A") S.squadA = data.squad || [];
+    else              S.squadB = data.squad || [];
+  } catch(e) { /* silently degrade — commentary falls back to shirt numbers */ }
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
@@ -842,11 +857,70 @@ function setCommentary(text, muted = false) {
   el.className = "commentary-text" + (muted ? " muted" : "");
 }
 
+// Extract shirt numbers and spatial context from a frame for commentary.
+// Replicates the same sort logic used in drawPlayers().
+// If S.squadA / S.squadB are populated, also resolves real player names:
+//   rank N (1-based) → squad[N-1].name  (squad is sorted by jersey_number)
+function getPlayerInfo(frame) {
+  const { positions, roles, mask } = frame;
+  if (!positions || !roles) return {};
+
+  const teamA = [], teamB = [];
+  for (let i = 0; i < positions.length; i++) {
+    if (mask && mask[i]) continue;
+    (roles[i][0] > 0.5 ? teamA : teamB).push(i);
+  }
+  teamA.sort((a, b) => positions[a][0] - positions[b][0]);
+  teamB.sort((a, b) => positions[b][0] - positions[a][0]);
+
+  const shirtNum = {};
+  teamA.forEach((idx, n) => { shirtNum[idx] = n + 1; });
+  teamB.forEach((idx, n) => { shirtNum[idx] = n + 1; });
+
+  // Helper: rank (1-based) → real player name, or null if squad not loaded
+  const nameA = rank => (S.squadA[rank - 1] || {}).name || null;
+  const nameB = rank => (S.squadB[rank - 1] || {}).name || null;
+
+  // Find actor (ball carrier): roles[i][1] > 0.5
+  let actorIdx = null;
+  for (let i = 0; i < roles.length; i++) {
+    if ((!mask || !mask[i]) && roles[i][1] > 0.5) { actorIdx = i; break; }
+  }
+
+  if (actorIdx === null) return {};
+
+  const actor_num  = shirtNum[actorIdx] || null;
+  const actor_name = actor_num ? nameA(actor_num) : null;
+  const [ax, ay]   = positions[actorIdx];
+
+  // Spatial position description from normalised pitch coords [0,1]
+  const xZone = ax < 0.33 ? "defensive third" : ax < 0.67 ? "midfield" : ax < 0.85 ? "attacking third" : "penalty area";
+  const yFlank = ay < 0.33 ? "left flank" : ay > 0.67 ? "right flank" : "central";
+  const actor_position = `${yFlank}, ${xZone}`;
+
+  // Nearest 2 opponents to the actor (Euclidean distance)
+  const opps = teamB.map(i => ({
+    i,
+    d: Math.hypot(positions[i][0] - ax, positions[i][1] - ay),
+  })).sort((a, b) => a.d - b.d).slice(0, 2);
+  const nearest_defenders = opps.map(o => shirtNum[o.i]).filter(Boolean);
+  const defender_names    = opps.map(o => nameB(shirtNum[o.i])).filter(Boolean);
+
+  // Highest-x teammate (excluding actor) = striker; second-highest = second_runner
+  const teammates    = teamA.filter(i => i !== actorIdx).sort((a, b) => positions[b][0] - positions[a][0]);
+  const striker_num  = teammates[0] != null ? shirtNum[teammates[0]] : null;
+  const striker_name = striker_num ? nameA(striker_num) : null;
+  const second_runner = teammates[1] != null ? shirtNum[teammates[1]] : null;
+
+  return { actor_num, actor_name, actor_position, nearest_defenders, defender_names, striker_num, striker_name, second_runner };
+}
+
 async function fetchCommentary(frame, stepIdx) {
   if (!S.commentaryEnabled) return;
 
   const ctx   = frame.context || {};
-  const key   = `${frame.action}|${(frame.probs.p_shot).toFixed(3)}|${stepIdx}|${ctx.zone}`;
+  const pi    = getPlayerInfo(frame);
+  const key   = `${frame.action}|${(frame.probs.p_shot).toFixed(3)}|${stepIdx}|${ctx.zone}|${pi.actor_name ?? pi.actor_num}`;
   if (_commentaryCache[key]) { setCommentary(_commentaryCache[key]); return; }
 
   // Show loading dot while fetching
@@ -866,19 +940,27 @@ async function fetchCommentary(frame, stepIdx) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        action:           frame.action,
-        defense_response: ctx.defense_response || "",
-        team_name_a:      nameA,
-        team_name_b:      nameB,
-        p_shot:           frame.probs.p_shot,
-        p_shot_delta:     frame.deltas.p_shot,
-        p_advance:        frame.probs.p_advance,
-        p_advance_delta:  frame.deltas.p_advance,
-        minute:           ctx.minute || 45,
-        zone:             ctx.zone   || 1,
-        score_diff:       ctx.score_diff || 0,
-        step_num:         stepIdx + 1,
-        total_steps:      S.frames.length,
+        action:            frame.action,
+        defense_response:  ctx.defense_response || "",
+        team_name_a:       nameA,
+        team_name_b:       nameB,
+        p_shot:            frame.probs.p_shot,
+        p_shot_delta:      frame.deltas.p_shot,
+        p_advance:         frame.probs.p_advance,
+        p_advance_delta:   frame.deltas.p_advance,
+        minute:            ctx.minute || 45,
+        zone:              ctx.zone   || 1,
+        score_diff:        ctx.score_diff || 0,
+        step_num:          stepIdx + 1,
+        total_steps:       S.frames.length,
+        actor_num:         pi.actor_num         ?? null,
+        actor_name:        pi.actor_name        ?? null,
+        actor_position:    pi.actor_position    ?? "",
+        nearest_defenders: pi.nearest_defenders ?? [],
+        defender_names:    pi.defender_names    ?? [],
+        striker_num:       pi.striker_num       ?? null,
+        striker_name:      pi.striker_name      ?? null,
+        second_runner:     pi.second_runner     ?? null,
       }),
     });
     const data = await res.json();
