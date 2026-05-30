@@ -567,14 +567,36 @@ class ConditionalEngine:
             dtype=torch.float32, device=self.device
         ).unsqueeze(0)   # (1, 3)
 
-        logits, _ = self.sse(pos_full, self.mask, ctx_t)
-        probs     = torch.sigmoid(logits).squeeze(0).cpu()   # (3,)
+        _, logits = self.sse(pos_full, self.mask, ctx_t)   # TacticalPredictor returns (z, logits)
+        probs           = torch.sigmoid(logits).squeeze(0).cpu()   # (3,)
 
         return OutcomeProbabilities(
             p_advance     = float(probs[0]),   # reached_s2
             p_final_third = float(probs[1]),   # reached_s3
             p_shot        = float(probs[2]),   # reached_shot
         )
+
+    @torch.no_grad()
+    def encode_frame(self,
+                     positions: torch.Tensor,
+                     mask:      torch.Tensor,
+                     context:   torch.Tensor) -> torch.Tensor:
+        """
+        Encode a raw freeze-frame tensor through the SSE and return the
+        256-dim z embedding.  Used by validation scripts.
+
+        Args:
+            positions : (B, N, 4)  [x, y, is_teammate, is_actor]
+            mask      : (B, N) bool
+            context   : (B, 3)     [zone/3, phase1, phase2_flag]
+
+        Returns:
+            z : (B, 256)
+        """
+        z, _ = self.sse(positions.to(self.device),
+                        mask.to(self.device),
+                        context.to(self.device))
+        return z.cpu()
 
     def list_teams(self) -> list[dict]:
         """Returns team ids and fingerprint norms (for UI team picker)."""
