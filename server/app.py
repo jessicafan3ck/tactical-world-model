@@ -25,7 +25,9 @@ Testable without frontend:
               "context":{"score_diff":-1,"minute":72,"zone":2,"phase":0,"poss_team":0}}'
 """
 
+import os
 import sys
+import hashlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -50,6 +52,7 @@ META  = BASE / "data" / "results" / "possession_meta.csv"
 
 _engine: ConditionalEngine | None = None
 _team_names: dict[int, str] = {}
+_commentary_cache: dict[str, str] = {}   # keyed by hash of inputs
 
 
 @asynccontextmanager
@@ -249,3 +252,72 @@ async def simulate_sequence(req: SequenceRequest):
     )
 
     return {"frames": [f.to_json_safe() for f in frames]}
+
+
+# ── Commentary ─────────────────────────────────────────────────────────────────
+
+class CommentaryRequest(BaseModel):
+    action:           str
+    defense_response: str
+    team_name_a:      str
+    team_name_b:      str
+    p_shot:           float
+    p_shot_delta:     float
+    p_advance:        float
+    p_advance_delta:  float
+    minute:           float
+    zone:             int
+    score_diff:       float
+    step_num:         int
+    total_steps:      int
+
+
+@app.post("/api/commentary")
+async def commentary(req: CommentaryRequest):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"commentary": "", "available": False}
+
+    # Stable cache key — same inputs always hit the same cached line
+    raw = (f"{req.action}|{req.defense_response}|{req.team_name_a}|{req.team_name_b}"
+           f"|{req.p_shot:.3f}|{req.p_shot_delta:.3f}|{req.zone}|{req.minute:.0f}"
+           f"|{req.score_diff:.0f}")
+    cache_key = hashlib.md5(raw.encode()).hexdigest()
+    if cache_key in _commentary_cache:
+        return {"commentary": _commentary_cache[cache_key], "available": True}
+
+    score_str = (
+        "level" if req.score_diff == 0
+        else f"up {int(abs(req.score_diff))}" if req.score_diff > 0
+        else f"down {int(abs(req.score_diff))}"
+    )
+    zone_names = {0: "own half", 1: "midfield", 2: "attacking third", 3: "penalty area"}
+    zone_str   = zone_names.get(req.zone, f"zone {req.zone}")
+    delta_str  = (
+        f"P(shot) {'rose' if req.p_shot_delta >= 0 else 'fell'} "
+        f"{abs(req.p_shot_delta)*100:.0f}pp to {req.p_shot*100:.0f}%"
+    )
+
+    prompt = (
+        f"You are a concise football analyst. "
+        f"Write exactly one sentence (max 30 words) of live tactical commentary.\n\n"
+        f"Situation: {req.team_name_a} vs {req.team_name_b}, "
+        f"minute {req.minute:.0f}, {score_str}, in the {zone_str}.\n"
+        f"Step {req.step_num} of {req.total_steps}: {req.team_name_a} plays {req.action}. "
+        f"Defense responds: {req.defense_response}. {delta_str}.\n\n"
+        f"Commentary (one sentence, no filler phrases like 'in a bold move'):"
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model    = "claude-haiku-4-5-20251001",
+            max_tokens = 80,
+            messages = [{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+        _commentary_cache[cache_key] = text
+        return {"commentary": text, "available": True}
+    except Exception as e:
+        return {"commentary": "", "available": False, "error": str(e)}

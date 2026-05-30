@@ -139,7 +139,7 @@ header h1 {
 .btn-run:disabled { background: #1f3a24; color: #3a6040; border-color: #1f3a24; cursor: not-allowed; }
 
 /* ── Main area ───────────────────────────────────────────────────── */
-.main { display: grid; grid-template-rows: 1fr auto auto auto; overflow: hidden; }
+.main { display: grid; grid-template-rows: 1fr auto auto auto auto auto; overflow: hidden; }
 
 .pitch-wrap {
   position: relative; overflow: hidden; display: flex;
@@ -219,6 +219,32 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
 .prob-delta.neg { color: var(--red); }
 .prob-track { height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
 .prob-fill  { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+/* Commentary */
+.commentary {
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.commentary-icon { font-size: 12px; flex-shrink: 0; opacity: 0.6; }
+.commentary-text {
+  font-size: 11px;
+  color: var(--text);
+  font-style: italic;
+  line-height: 1.4;
+  flex: 1;
+}
+.commentary-text.muted { color: var(--muted); }
+.commentary-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); flex-shrink: 0;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 </style>
 </head>
 <body>
@@ -279,6 +305,11 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
         <div class="badge-def"    id="badgeDef"></div>
       </div>
       <div class="loading-overlay" id="loader">Running simulation&hellip;</div>
+    </div>
+
+    <div class="commentary" id="commentaryBar">
+      <span class="commentary-icon">🎙</span>
+      <span class="commentary-text muted" id="commentaryText">Commentary will appear here after simulation runs</span>
     </div>
 
     <div class="playback">
@@ -361,6 +392,7 @@ const S = {
   step:    -1,
   playing: false,
   timer:   null,
+  commentaryEnabled: true,   // set false if API key absent
 };
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -450,6 +482,7 @@ function clearAll() {
   S.queue = []; S.frames = []; S.step = -1; stopPlay();
   redrawQueue(); drawTimeline([]); clearProbs();
   document.getElementById("badge").classList.remove("visible");
+  setCommentary("Commentary will appear here after simulation runs", true);
   updateControls(); drawEmpty();
 }
 
@@ -543,6 +576,70 @@ function renderFrame(n) {
   document.querySelectorAll(".tl-step").forEach((el, i) =>
     el.classList.toggle("active", i === n));
   renderProbs(f.probs, f.deltas);
+  fetchCommentary(f, n);
+}
+
+// ── Commentary ────────────────────────────────────────────────────────────────
+const _commentaryCache = {};
+
+function setCommentary(text, muted = false) {
+  const el = document.getElementById("commentaryText");
+  el.textContent = text;
+  el.className = "commentary-text" + (muted ? " muted" : "");
+}
+
+async function fetchCommentary(frame, stepIdx) {
+  if (!S.commentaryEnabled) return;
+
+  const ctx   = frame.context || {};
+  const key   = `${frame.action}|${(frame.probs.p_shot).toFixed(3)}|${stepIdx}|${ctx.zone}`;
+  if (_commentaryCache[key]) { setCommentary(_commentaryCache[key]); return; }
+
+  // Show loading dot while fetching
+  const bar = document.getElementById("commentaryBar");
+  const dot = document.createElement("span");
+  dot.className = "commentary-dot";
+  bar.appendChild(dot);
+  setCommentary("", false);
+
+  const tA = document.getElementById("selA");
+  const tB = document.getElementById("selB");
+  const nameA = tA.options[tA.selectedIndex]?.text || "Team A";
+  const nameB = tB.options[tB.selectedIndex]?.text || "Team B";
+
+  try {
+    const res = await fetch("/api/commentary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action:           frame.action,
+        defense_response: ctx.defense_response || "",
+        team_name_a:      nameA,
+        team_name_b:      nameB,
+        p_shot:           frame.probs.p_shot,
+        p_shot_delta:     frame.deltas.p_shot,
+        p_advance:        frame.probs.p_advance,
+        p_advance_delta:  frame.deltas.p_advance,
+        minute:           ctx.minute || 45,
+        zone:             ctx.zone   || 1,
+        score_diff:       ctx.score_diff || 0,
+        step_num:         stepIdx + 1,
+        total_steps:      S.frames.length,
+      }),
+    });
+    const data = await res.json();
+    dot.remove();
+    if (data.available && data.commentary) {
+      _commentaryCache[key] = data.commentary;
+      setCommentary(data.commentary);
+    } else {
+      S.commentaryEnabled = false;
+      setCommentary("Set ANTHROPIC_API_KEY to enable live commentary.", true);
+    }
+  } catch(e) {
+    dot.remove();
+    setCommentary("", true);
+  }
 }
 
 // ── Probability bars ──────────────────────────────────────────────────────────
@@ -685,8 +782,23 @@ function drawPitch() {
 
 function drawPlayers(positions, roles, mask) {
   const ctx = document.getElementById("pitch").getContext("2d");
-  const R   = Math.max(7, Math.round(CW * 0.011));
+  const R   = Math.max(8, Math.round(CW * 0.012));
 
+  // Assign shirt numbers by spatial position within each team.
+  // Team A (attacking left→right): sort by x ascending → GK=1, FWD=11.
+  // Team B (defending right→left): sort by x descending → GK=1, FWD=11.
+  const teamA = [], teamB = [];
+  for (let i = 0; i < positions.length; i++) {
+    if (mask[i]) continue;
+    (roles[i][0] > 0.5 ? teamA : teamB).push(i);
+  }
+  teamA.sort((a, b) => positions[a][0] - positions[b][0]);
+  teamB.sort((a, b) => positions[b][0] - positions[a][0]);
+  const labels = {};
+  teamA.forEach((idx, n) => { labels[idx] = n + 1; });
+  teamB.forEach((idx, n) => { labels[idx] = n + 1; });
+
+  // Draw circles first, then labels on top
   for (let i = 0; i < positions.length; i++) {
     if (mask[i]) continue;
     const x       = px(positions[i][0]);
@@ -712,7 +824,17 @@ function drawPlayers(positions, roles, mask) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
+
+    // Shirt number inside circle
+    const num      = labels[i];
+    const fontSize = Math.max(7, Math.round(r * 0.9));
+    ctx.font         = `bold ${fontSize}px monospace`;
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle    = isActor ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.9)";
+    ctx.fillText(num, x, y);
   }
+  ctx.textBaseline = "alphabetic";
 }
 </script>
 </body>
