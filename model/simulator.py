@@ -141,14 +141,25 @@ class SimulatorRNN(nn.Module):
 # ── Inference helper ────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def simulate_match(model:   SimulatorRNN,
-                   fp_home: torch.Tensor,
-                   fp_away: torch.Tensor,
-                   device:  torch.device | None = None,
-                   n_poss:  int  = SIM_STEPS,
-                   seed:    int | None = None) -> pd.DataFrame:
+def simulate_match(model:          SimulatorRNN,
+                   fp_home:        torch.Tensor,
+                   fp_away:        torch.Tensor,
+                   device:         torch.device | None = None,
+                   n_poss:         int   = SIM_STEPS,
+                   seed:           int | None = None,
+                   shot_multiplier: float = 2.0,
+                   goal_given_shot: float = 0.25) -> pd.DataFrame:
     """
     Simulate a full match via autoregressive rollout.
+
+    Calibration notes:
+      shot_multiplier : the model's raw p(shot) is trained on a filtered
+        dataset where shots are only 0.4% of possessions. Multiply by ~8
+        to reach realistic ~3-4% per possession (~10-15 shots/90 min).
+      goal_given_shot : overrides the model's p(goal|shot) because the
+        training target _goal_in_poss was always 0. ~0.28 matches real
+        conversion rates in women's football.
+
     Returns DataFrame with columns:
         minute, poss_team, zone, phase, advanced, shot, goal, retain,
         score_home, score_away
@@ -191,9 +202,11 @@ def simulate_match(model:   SimulatorRNN,
         probs, h = model.step(state, fp_home, fp_away, h)
         probs = probs.squeeze(0).cpu()
 
+        # Apply calibration: shot prob is dataset-underestimated; goal uses override
+        p_shot = float((probs[1] * shot_multiplier).clamp(0, 1))
         adv    = float(torch.bernoulli(probs[0]))
-        shot   = float(torch.bernoulli(probs[1]))
-        goal   = float(torch.bernoulli(probs[2])) if shot else 0.0
+        shot   = float(torch.bernoulli(torch.tensor(p_shot)))
+        goal   = float(np.random.random() < goal_given_shot) if shot else 0.0
         retain = float(torch.bernoulli(probs[3]))
 
         bucket = home_stats if poss_team == 0 else away_stats
@@ -214,10 +227,11 @@ def simulate_match(model:   SimulatorRNN,
             "score_away": away_stats["goals"],
         })
 
-        minute    += np.random.exponential(1.5)
-        zone       = min(zone + int(adv), 3)
-        phase      = 0
-        poss_team  = poss_team if retain else 1 - poss_team
+        # ~15 sec per possession on average (0.25 min), matching real match data
+        minute   += np.random.exponential(0.25)
+        zone      = min(zone + int(adv), 3)
+        phase     = 0
+        poss_team = poss_team if retain else 1 - poss_team
 
         if goal:
             zone   = 1
