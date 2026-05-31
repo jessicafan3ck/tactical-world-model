@@ -1,447 +1,679 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-mode="explainer">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tactical World Model</title>
 <style>
+/* ── Tokens ──────────────────────────────────────────────────────────────── */
 :root {
-  --bg:       #0d1117;
-  --surface:  #161b22;
-  --surface2: #1c2128;
-  --border:   #30363d;
-  --text:     #e6edf3;
-  --muted:    #7d8590;
-  --blue:     #58a6ff;
-  --gold:     #f0c040;
-  --red:      #f85149;
-  --green:    #3fb950;
-  --purple:   #bc8cff;
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface2:  #1c2128;
+  --border:    #30363d;
+  --text:      #e6edf3;
+  --muted:     #7d8590;
+  --blue:      #58a6ff;
+  --gold:      #f0c040;
+  --red:       #f85149;
+  --green:     #3fb950;
+  --orange:    #f0832a;
+  --purple:    #bc8cff;
+  --team-a:    #58a6ff;
+  --team-b:    #f85149;
+  --pitch-bg:  #1a4731;
+  --radius:    6px;
+  --font:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --serif:     Georgia, 'Times New Roman', serif;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f2f4;
+    --border: #d0d7de; --text: #1f2328; --muted: #656d76;
+    --blue: #0969da; --gold: #9a6700; --red: #cf222e;
+    --green: #1a7f37; --orange: #bc4c00; --purple: #8250df;
+  }
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 13px;
-  height: 100vh;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); font-size: 13px;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
 }
 
-/* ── Header ─────────────────────────────────────────────────────── */
+/* ── Mode gating ─────────────────────────────────────────────────────────── */
+[data-mode="explainer"] .analyst-only  { display: none !important; }
+[data-mode="analyst"]   .explainer-only{ display: none !important; }
+[data-mode="presenter"] .non-presenter { display: none !important; }
+[data-mode="presenter"] .presenter-scale { transform: scale(1.08); transform-origin: top left; }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
 header {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 8px 14px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  background: var(--surface); border-bottom: 0.5px solid var(--border);
+  padding: 8px 14px; display: flex; align-items: center; gap: 12px;
+  flex-wrap: nowrap; flex-shrink: 0; z-index: 10;
 }
-header h1 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gold);
-  letter-spacing: 0.4px;
-  white-space: nowrap;
-}
-.team-row { display: flex; align-items: center; gap: 8px; }
-.team-row select {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 4px 8px;
-  border-radius: 5px;
-  font-size: 12px;
-  cursor: pointer;
-  min-width: 150px;
-}
-.team-row .vs { color: var(--muted); font-size: 11px; }
-.ctx-row { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-.ctx-row label { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
-.ctx-row input, .ctx-row select {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 3px 5px;
-  border-radius: 4px;
-  font-size: 11px;
-  width: 52px;
-}
-.ctx-row select { width: auto; }
+.title { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; letter-spacing: 0.2px; }
 
-/* ── Layout ──────────────────────────────────────────────────────── */
-.workspace { display: grid; grid-template-columns: 210px 1fr; overflow: hidden; }
+.ctx-bar {
+  display: flex; align-items: center; gap: 6px; flex: 1;
+  overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+}
+.ctx-bar::-webkit-scrollbar { display: none; }
 
-/* ── Sidebar ─────────────────────────────────────────────────────── */
-.sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
+.team-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.team-select {
+  background: transparent; border: none; color: var(--text);
+  font-size: 12px; font-family: var(--font); cursor: pointer;
+  padding: 0; font-weight: 500; appearance: none; -webkit-appearance: none;
+}
+.team-select option { background: var(--surface2); }
+.ctx-sep { color: var(--border); }
+.ctx-pill {
+  background: var(--surface2); border: 0.5px solid var(--border);
+  border-radius: 20px; padding: 2px 8px; font-size: 11px; color: var(--muted);
+  cursor: pointer; white-space: nowrap;
+}
+.ctx-pill:hover { border-color: var(--blue); color: var(--text); }
+.ctx-pill.editable { position: relative; }
+.ctx-pill input, .ctx-pill select {
+  background: transparent; border: none; color: var(--text);
+  font-size: 11px; font-family: var(--font); width: auto;
+  text-align: center; cursor: pointer; appearance: none;
+  -webkit-appearance: none; padding: 0; outline: none;
+}
+.ctx-chip {
+  background: rgba(88,166,255,0.12); border: 0.5px solid rgba(88,166,255,0.3);
+  border-radius: 20px; padding: 2px 8px; font-size: 11px; color: var(--blue);
+}
+
+.mode-toggle {
+  display: flex; border: 0.5px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; flex-shrink: 0;
+}
+.mode-btn {
+  background: transparent; border: none; color: var(--muted);
+  padding: 4px 10px; font-size: 11px; font-family: var(--font);
+  cursor: pointer; transition: background 0.15s;
+}
+.mode-btn:hover { background: var(--surface2); color: var(--text); }
+.mode-btn.active { background: var(--surface2); color: var(--text); font-weight: 500; }
+
+/* ── Workspace ───────────────────────────────────────────────────────────── */
+.workspace {
+  flex: 1; display: grid;
+  grid-template-columns: 220px 1fr;
   overflow: hidden;
 }
-.sidebar-top { overflow-y: auto; flex: 1; padding: 10px; }
-.palette-group { margin-bottom: 10px; }
+[data-mode="presenter"] .workspace { grid-template-columns: 180px 1fr; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--surface); border-right: 0.5px solid var(--border);
+  display: flex; flex-direction: column; overflow-y: auto;
+  overflow-x: hidden; scrollbar-width: thin;
+}
+
+/* Explainer: 5 large action buttons */
+.action-xl-grid {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px;
+}
+.action-xl {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 3px; padding: 10px 12px; border-radius: var(--radius);
+  background: var(--surface2); border: 0.5px solid var(--border);
+  cursor: pointer; text-align: left; font-family: var(--font);
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+.action-xl:hover { border-color: var(--blue); background: rgba(88,166,255,0.07); }
+.action-xl:active { opacity: 0.75; }
+.action-xl.previewing { border-color: var(--gold); background: rgba(240,192,64,0.07); }
+.action-xl .ax-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.action-xl .ax-hint { font-size: 10px; color: var(--muted); }
+.action-xl .ax-hint.pos { color: var(--green); }
+.action-xl .ax-hint.neg { color: var(--red); }
+.action-xl .ax-kbd {
+  position: absolute; top: 8px; right: 8px;
+  background: var(--bg); border: 0.5px solid var(--border);
+  border-radius: 3px; padding: 1px 4px; font-size: 9px;
+  color: var(--muted); font-family: monospace;
+  display: none; /* hidden in explainer, shown in analyst */
+}
+
+/* Analyst: full palette */
+.palette-group { padding: 8px 12px 4px; }
 .palette-group h4 {
-  font-size: 10px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
+  font-size: 10px; font-weight: 500; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
 }
-.action-btn {
+.action-sm {
   display: flex; align-items: center; width: 100%;
-  background: var(--surface2); border: 1px solid var(--border);
-  color: var(--text); padding: 5px 7px; border-radius: 5px;
-  margin-bottom: 3px; cursor: pointer; font-size: 12px; text-align: left; gap: 7px;
+  gap: 7px; padding: 5px 8px; border-radius: var(--radius);
+  background: transparent; border: 0.5px solid transparent;
+  cursor: pointer; font-size: 12px; text-align: left;
+  font-family: var(--font); color: var(--text); margin-bottom: 2px;
+  transition: background 0.12s;
 }
-.action-btn:hover { background: #2d333b; border-color: #484f58; }
-.action-btn:active { opacity: 0.7; }
-.action-btn.attack { border-left: 3px solid var(--blue); }
-.action-btn.build  { border-left: 3px solid var(--purple); }
-.action-btn.defend { border-left: 3px solid var(--red); }
-.kbd {
-  margin-left: auto; background: var(--bg); border: 1px solid var(--border);
-  border-radius: 3px; padding: 1px 4px; font-size: 9px; color: var(--muted);
-  font-family: monospace; flex-shrink: 0;
+.action-sm:hover { background: var(--surface2); border-color: var(--border); }
+.action-sm .a-label { flex: 1; }
+.action-sm .a-hint { font-size: 10px; color: var(--muted); }
+.action-sm .a-hint.pos { color: var(--green); }
+.action-sm .a-kbd {
+  background: var(--bg); border: 0.5px solid var(--border);
+  border-radius: 3px; padding: 1px 4px; font-size: 9px;
+  color: var(--muted); font-family: monospace; flex-shrink: 0;
 }
+.action-sm.attack { border-left: 2px solid var(--blue) !important; }
+.action-sm.build  { border-left: 2px solid var(--purple) !important; }
+.action-sm.defend { border-left: 2px solid var(--red) !important; }
+
+/* Exploratory label */
+.exploratory-label {
+  font-size: 10px; color: var(--muted); font-style: italic;
+  padding: 6px 12px 0; line-height: 1.4;
+}
+
+/* Run button */
+.run-wrap { padding: 10px 12px; }
+.btn-run {
+  width: 100%; padding: 8px; border-radius: var(--radius);
+  background: var(--green); color: #000; border: none;
+  font-size: 13px; font-weight: 600; font-family: var(--font);
+  cursor: pointer; letter-spacing: 0.2px;
+}
+.btn-run:disabled { background: #1f3a24; color: #3a6040; cursor: not-allowed; }
+.btn-run:not(:disabled):hover { background: #56d068; }
+
+/* Progressive disclosure */
+.disclosure {
+  border-top: 0.5px solid var(--border);
+}
+.disclosure summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; cursor: pointer; list-style: none;
+  font-size: 12px; font-weight: 500; color: var(--text);
+  user-select: none;
+}
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary:hover { background: var(--surface2); }
+.disc-chevron {
+  color: var(--muted); font-size: 10px;
+  transition: transform 0.2s;
+}
+.disclosure[open] .disc-chevron { transform: rotate(90deg); }
+.disclosure-body { padding: 8px 12px 12px; }
 
 /* Queue */
-.sidebar-bottom {
-  border-top: 1px solid var(--border); padding: 10px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.queue-header {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 11px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.6px;
-}
-.queue-count { color: var(--text); }
-.queue-list {
-  display: flex; flex-direction: column; gap: 2px;
-  max-height: 160px; overflow-y: auto;
-}
+.queue-empty { color: var(--muted); font-size: 11px; font-style: italic; padding: 4px 0; }
+.queue-list { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 .queue-item {
   display: flex; align-items: center; gap: 5px;
-  background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; padding: 4px 6px; font-size: 11px;
+  background: var(--surface2); border: 0.5px solid var(--border);
+  border-radius: 4px; padding: 5px 7px; font-size: 11px;
 }
-.q-num  { color: var(--muted); width: 14px; text-align: center; flex-shrink: 0; }
-.q-lbl  { flex: 1; }
-.q-rm   { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; }
+.q-num { color: var(--muted); width: 14px; text-align: center; flex-shrink: 0; font-size: 10px; }
+.q-lbl { flex: 1; }
+.q-rm { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
 .q-rm:hover { color: var(--red); }
-.queue-empty { color: var(--muted); font-size: 11px; font-style: italic; padding: 6px 0; text-align: center; }
 .btn-row { display: flex; gap: 6px; }
-.sim-options { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
-.opt-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer; }
-.opt-row input[type=checkbox] { accent-color: var(--purple); }
-.opt-row select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 3px; font-size: 11px; padding: 1px 3px; }
-.prob-std { font-size: 9px; color: var(--muted); margin-left: 3px; }
-.opt-result { padding: 8px; border-bottom: 1px solid var(--border); }
-.opt-result-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.opt-step-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 10px; color: var(--text); white-space: nowrap; }
-.btn { flex: 1; padding: 6px 8px; border-radius: 5px; border: 1px solid var(--border); font-size: 12px; font-weight: 500; cursor: pointer; }
-.btn-clear { background: var(--surface2); color: var(--muted); }
-.btn-clear:hover { color: var(--text); }
-.btn-run { background: var(--green); color: #000; border-color: var(--green); font-weight: 600; }
-.btn-run:disabled { background: #1f3a24; color: #3a6040; border-color: #1f3a24; cursor: not-allowed; }
+.btn-sm {
+  flex: 1; padding: 5px 8px; border-radius: var(--radius);
+  border: 0.5px solid var(--border); font-size: 11px;
+  font-family: var(--font); cursor: pointer;
+  background: var(--surface2); color: var(--muted);
+}
+.btn-sm:hover { color: var(--text); }
 
-/* ── Main area ───────────────────────────────────────────────────── */
-.main { display: grid; grid-template-rows: 1fr auto auto auto auto auto auto; overflow: hidden; }
+/* Advanced options */
+.opt-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--muted); margin-bottom: 6px; cursor: pointer;
+}
+.opt-row input[type=checkbox] { accent-color: var(--purple); cursor: pointer; }
+.opt-select {
+  margin-left: auto; background: var(--surface2); color: var(--text);
+  border: 0.5px solid var(--border); border-radius: 4px;
+  font-size: 11px; padding: 2px 4px; cursor: pointer;
+  font-family: var(--font);
+}
 
+/* ── Main ────────────────────────────────────────────────────────────────── */
+.main {
+  display: grid;
+  grid-template-rows: 1fr auto auto auto auto;
+  overflow: hidden;
+}
+
+/* ── Pitch ───────────────────────────────────────────────────────────────── */
 .pitch-wrap {
-  position: relative; overflow: hidden; display: flex;
-  align-items: center; justify-content: center; padding: 10px; background: var(--bg);
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px; background: var(--bg);
 }
-canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
-
-.step-badge {
-  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
-  border-radius: 6px; padding: 5px 12px; text-align: center;
-  pointer-events: none; white-space: nowrap; display: none;
-}
-.step-badge.visible { display: block; }
-.badge-action { font-size: 14px; font-weight: 600; color: var(--gold); }
-.badge-def    { font-size: 10px; color: var(--red); margin-top: 1px; }
-
+canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; }
 .loading-overlay {
-  position: absolute; inset: 0; background: rgba(13,17,23,0.82);
+  position: absolute; inset: 0;
+  background: rgba(13,17,23,0.75);
   display: none; align-items: center; justify-content: center;
-  color: var(--muted); font-size: 12px; border-radius: 3px;
+  color: var(--muted); font-size: 12px;
 }
 .loading-overlay.visible { display: flex; }
 
-/* Playback */
+/* Pitch legend */
+.pitch-legend {
+  display: flex; align-items: center; gap: 14px; justify-content: center;
+  padding: 5px 12px; background: var(--surface); border-top: 0.5px solid var(--border);
+  font-size: 10px; color: var(--muted);
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.legend-dot.a { background: var(--team-a); }
+.legend-dot.b { background: var(--team-b); }
+.legend-dot.carrier { width: 13px; height: 13px; background: var(--gold); border: 2px solid #fff; }
+.legend-threat { width: 14px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, rgba(240,131,42,0.7), rgba(240,131,42,0)); }
+
+/* ── Metrics ─────────────────────────────────────────────────────────────── */
+.metrics-row {
+  display: grid; grid-template-columns: 1.6fr 1fr 1fr; gap: 0;
+  border-top: 0.5px solid var(--border); background: var(--surface);
+}
+.metric-card {
+  padding: 10px 14px; border-right: 0.5px solid var(--border);
+}
+.metric-card:last-child { border-right: none; }
+.metric-label { font-size: 10px; color: var(--muted); margin-bottom: 5px; font-weight: 500; }
+.metric-value-row { display: flex; align-items: baseline; gap: 10px; }
+.metric-value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.metric-card.secondary .metric-value { font-size: 18px; }
+.metric-delta-hero {
+  font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1;
+}
+.metric-delta-hero.pos { color: var(--green); }
+.metric-delta-hero.neg { color: var(--red); }
+.metric-delta-hero.flat { color: var(--muted); }
+.metric-delta-sm {
+  font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums;
+}
+.metric-delta-sm.pos { color: var(--green); }
+.metric-delta-sm.neg { color: var(--red); }
+.metric-delta-sm.flat { color: var(--muted); }
+.metric-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.metric-track { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.metric-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+/* ── Commentary ──────────────────────────────────────────────────────────── */
+.commentary {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 14px; border-top: 0.5px solid var(--border);
+  background: var(--surface); min-height: 44px;
+}
+.commentary-icon { font-size: 14px; flex-shrink: 0; opacity: 0.7; padding-top: 1px; }
+.commentary-text {
+  font-family: var(--serif); font-style: italic; font-size: 13px;
+  color: var(--text); line-height: 1.5; flex: 1;
+}
+.commentary-text.muted { color: var(--muted); font-family: var(--font); font-style: normal; }
+.commentary-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  flex-shrink: 0; margin-top: 5px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Playback ─────────────────────────────────────────────────────────────── */
 .playback {
-  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
-  border-top: 1px solid var(--border); background: var(--surface);
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-top: 0.5px solid var(--border);
+  background: var(--surface); flex-wrap: wrap;
 }
 .ctrl {
-  background: var(--surface2); border: 1px solid var(--border);
+  background: var(--surface2); border: 0.5px solid var(--border);
   color: var(--text); padding: 4px 10px; border-radius: 4px;
-  cursor: pointer; font-size: 12px;
+  cursor: pointer; font-size: 12px; font-family: var(--font);
 }
 .ctrl:hover:not(:disabled) { background: #2d333b; }
 .ctrl:disabled { opacity: 0.35; cursor: not-allowed; }
 .ctrl.playing { background: var(--green); color: #000; border-color: var(--green); }
-.step-ctr { color: var(--muted); font-size: 11px; min-width: 70px; }
-.speed-sel {
-  margin-left: auto; background: var(--surface2); border: 1px solid var(--border);
-  color: var(--muted); padding: 3px 5px; border-radius: 4px;
-  font-size: 10px; cursor: pointer;
-}
-
-/* Timeline */
-.timeline {
-  display: flex; align-items: flex-start; gap: 0; padding: 6px 12px;
-  border-top: 1px solid var(--border); overflow-x: auto;
-  background: var(--surface); min-height: 46px; scrollbar-width: thin;
-}
-.tl-empty { color: var(--muted); font-size: 11px; font-style: italic; align-self: center; }
-.tl-step {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  cursor: pointer; padding: 3px 6px; border-radius: 5px; flex-shrink: 0;
-  border: 1px solid transparent;
-}
-.tl-step:hover { background: var(--surface2); }
-.tl-step.active { background: rgba(240,192,64,0.1); border-color: rgba(240,192,64,0.35); }
-.tl-pill {
-  font-size: 10px; font-weight: 500; padding: 2px 7px;
-  border-radius: 10px; background: var(--surface2); border: 1px solid var(--border); white-space: nowrap;
-}
-.tl-step.active .tl-pill { background: rgba(240,192,64,0.15); border-color: var(--gold); color: var(--gold); }
-.tl-def  { font-size: 9px; color: var(--red); white-space: nowrap; }
-.tl-arrow { color: var(--muted); font-size: 11px; padding: 0 2px; margin-top: 5px; align-self: flex-start; }
-
-/* Prob bars */
-.prob-section {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
-  padding: 7px 12px; border-top: 1px solid var(--border); background: var(--surface);
-}
-.prob-row { display: flex; flex-direction: column; gap: 3px; }
-.prob-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
-.prob-pct   { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.prob-delta { font-size: 9px; font-variant-numeric: tabular-nums; }
-.prob-delta.pos { color: var(--green); }
-.prob-delta.neg { color: var(--red); }
-.prob-track { height: 3px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
-.prob-fill  { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
-
-/* Alpha slider inside queue items */
-.q-alpha {
-  display: none; padding: 4px 6px 2px; background: var(--bg);
-  border-top: 1px solid var(--border); border-radius: 0 0 4px 4px;
-}
-.q-alpha.open { display: block; }
-.q-alpha label { font-size: 9px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-.q-alpha input[type=range] { flex: 1; accent-color: var(--blue); cursor: pointer; }
-.q-alpha-val { min-width: 28px; text-align: right; color: var(--text); font-size: 9px; }
-
-/* Suggest panel */
-.suggest-panel {
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: 6px 12px;
+.step-ctr { font-size: 11px; color: var(--muted); min-width: 70px; }
+.peak-badge {
+  font-size: 10px; color: var(--gold);
+  background: rgba(240,192,64,0.1); border: 0.5px solid rgba(240,192,64,0.35);
+  border-radius: 20px; padding: 2px 8px; white-space: nowrap;
   display: none;
 }
-.suggest-panel.visible { display: block; }
-.suggest-header {
-  font-size: 10px; font-weight: 600; color: var(--muted);
-  text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px;
-  display: flex; align-items: center; justify-content: space-between;
+.peak-badge.visible { display: inline; }
+.speed-sel {
+  margin-left: auto; background: var(--surface2); border: 0.5px solid var(--border);
+  color: var(--muted); padding: 3px 5px; border-radius: 4px;
+  font-size: 10px; cursor: pointer; font-family: var(--font);
 }
-.suggest-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; }
-.suggest-list { display: flex; flex-direction: column; gap: 3px; }
-.suggest-row {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 11px; padding: 3px 0;
-}
-.suggest-rank {
-  width: 16px; text-align: center; color: var(--muted);
-  font-size: 10px; flex-shrink: 0;
-}
-.suggest-name { flex: 1; }
-.suggest-bar-wrap { width: 80px; height: 4px; background: var(--surface2); border-radius: 2px; overflow: hidden; }
-.suggest-bar { height: 100%; border-radius: 2px; background: var(--green); transition: width 0.3s; }
-.suggest-bar.neg { background: var(--red); }
-.suggest-delta { min-width: 40px; text-align: right; font-size: 10px; font-variant-numeric: tabular-nums; }
-.suggest-delta.pos { color: var(--green); }
-.suggest-delta.neg { color: var(--red); }
-.suggest-add { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 3px; padding: 1px 5px; cursor: pointer; font-size: 9px; }
-.suggest-add:hover { color: var(--text); border-color: var(--blue); }
 
-/* Commentary */
-.commentary {
-  padding: 6px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  min-height: 30px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Timeline strip */
+.timeline {
+  display: flex; align-items: flex-start; gap: 0;
+  padding: 5px 12px; background: var(--surface);
+  border-top: 0.5px solid var(--border); overflow-x: auto;
+  min-height: 0; scrollbar-width: thin;
 }
-.commentary-icon { font-size: 12px; flex-shrink: 0; opacity: 0.6; }
-.commentary-text {
-  font-size: 11px;
-  color: var(--text);
-  font-style: italic;
-  line-height: 1.4;
-  flex: 1;
+.tl-empty { color: var(--muted); font-size: 11px; font-style: italic; align-self: center; display: none; }
+.tl-step {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  cursor: pointer; padding: 3px 6px; border-radius: 4px; flex-shrink: 0;
+  border: 0.5px solid transparent;
 }
-.commentary-text.muted { color: var(--muted); }
-.commentary-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--green); flex-shrink: 0;
-  animation: pulse 1.2s ease-in-out infinite;
+.tl-step:hover { background: var(--surface2); }
+.tl-step.active { background: rgba(240,192,64,0.08); border-color: rgba(240,192,64,0.3); }
+.tl-step.peak { background: rgba(240,192,64,0.15); }
+.tl-pill {
+  font-size: 10px; font-weight: 500; padding: 2px 6px;
+  border-radius: 10px; background: var(--surface2); border: 0.5px solid var(--border);
+  white-space: nowrap;
 }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.tl-step.active .tl-pill { background: rgba(240,192,64,0.15); border-color: var(--gold); color: var(--gold); }
+.tl-arrow { color: var(--muted); font-size: 10px; padding: 0 2px; margin-top: 5px; align-self: flex-start; }
+
+/* ── Onboarding ──────────────────────────────────────────────────────────── */
+.onboarding-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100;
+  display: none;
+}
+.onboarding-overlay.visible { display: block; }
+.coachmark {
+  position: fixed; background: var(--surface); border: 0.5px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; max-width: 260px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 101;
+  font-size: 12px; line-height: 1.5;
+}
+.coachmark-step { font-size: 10px; color: var(--muted); margin-bottom: 6px; font-weight: 500; }
+.coachmark-text { color: var(--text); margin-bottom: 12px; }
+.coachmark-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.coachmark-skip { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 11px; font-family: var(--font); }
+.coachmark-next {
+  background: var(--blue); color: #fff; border: none; border-radius: 4px;
+  padding: 5px 12px; font-size: 11px; cursor: pointer; font-family: var(--font);
+}
+
+/* ── Responsive Presenter ────────────────────────────────────────────────── */
+[data-mode="presenter"] header { padding: 6px 14px; }
+[data-mode="presenter"] .metric-value { font-size: 28px; }
+[data-mode="presenter"] .metric-delta-hero { font-size: 24px; }
+[data-mode="presenter"] .commentary-text { font-size: 15px; }
+[data-mode="presenter"] .action-xl .ax-name { font-size: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-fill { transition: none; }
+}
 </style>
 </head>
 <body>
 
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
 <header>
-  <h1>Tactical World Model</h1>
-  <div class="team-row">
-    <select id="selA"><option value="">— Attacking team —</option></select>
-    <span class="vs">vs</span>
-    <select id="selB"><option value="">— Defending team —</option></select>
-  </div>
-  <div class="ctx-row">
-    <label>Minute <input type="number" id="iMin"   value="45" min="0" max="90"></label>
-    <label>Score  <input type="number" id="iScore" value="0"  min="-5" max="5"></label>
-    <label>Zone
+  <span class="title">Tactical World Model</span>
+
+  <div class="ctx-bar">
+    <span class="team-dot" id="dotA" style="background:var(--team-a)"></span>
+    <select class="team-select" id="selA"></select>
+    <span class="ctx-sep">·</span>
+    <select class="team-select" id="selB"></select>
+    <span class="team-dot" id="dotB" style="background:var(--team-b)"></span>
+    <span class="ctx-sep">·</span>
+    <span class="ctx-pill editable" title="Minute">
+      <input type="number" id="iMin" value="45" min="0" max="90" style="width:28px">′
+    </span>
+    <span class="ctx-pill editable" title="Score difference (positive = leading)">
+      <input type="number" id="iScore" value="0" min="-5" max="5" style="width:28px">
+    </span>
+    <span class="ctx-pill editable" title="Zone">
       <select id="iZone">
-        <option value="0">0 Own</option>
-        <option value="1" selected>1 Mid</option>
-        <option value="2">2 Attack</option>
-        <option value="3">3 Box</option>
+        <option value="0">Defensive third</option>
+        <option value="1" selected>Middle third</option>
+        <option value="2">Attacking third</option>
+        <option value="3">Near goal</option>
       </select>
-    </label>
-    <label>Phase
+    </span>
+    <span class="ctx-pill editable" title="Phase">
       <select id="iPhase">
         <option value="0" selected>Open play</option>
-        <option value="1">Set piece</option>
-        <option value="2">Counter</option>
-        <option value="3">GK dist.</option>
+        <option value="1">Counter</option>
+        <option value="2">Set piece</option>
       </select>
-    </label>
+    </span>
+    <span class="ctx-chip" id="dirChip">— attacking →</span>
+  </div>
+
+  <div class="mode-toggle non-presenter">
+    <button class="mode-btn active" onclick="setMode('explainer')">Explainer</button>
+    <button class="mode-btn"        onclick="setMode('analyst')">Analyst</button>
+    <button class="mode-btn"        onclick="setMode('presenter')">Presenter</button>
   </div>
 </header>
 
+<!-- ── Workspace ───────────────────────────────────────────────────────────── -->
 <div class="workspace">
+
+  <!-- Sidebar -->
   <aside class="sidebar">
-    <div class="sidebar-top">
-      <div id="palette"></div>
+
+    <!-- Explainer: 5 large attack actions -->
+    <div class="action-xl-grid explainer-only">
+      <div class="exploratory-label">Pick an action and watch how the play reshapes.</div>
+      <button class="action-xl" data-action="ADVANCE"      onclick="explainerRun('ADVANCE')"
+              onmouseenter="previewHint('ADVANCE')" onmouseleave="clearPreview()">
+        <span class="ax-name">Advance</span>
+        <span class="ax-hint" id="hint-ADVANCE">—</span>
+      </button>
+      <button class="action-xl" data-action="THROUGH_BALL" onclick="explainerRun('THROUGH_BALL')"
+              onmouseenter="previewHint('THROUGH_BALL')" onmouseleave="clearPreview()">
+        <span class="ax-name">Through ball</span>
+        <span class="ax-hint" id="hint-THROUGH_BALL">—</span>
+      </button>
+      <button class="action-xl" data-action="CROSS"        onclick="explainerRun('CROSS')"
+              onmouseenter="previewHint('CROSS')" onmouseleave="clearPreview()">
+        <span class="ax-name">Cross</span>
+        <span class="ax-hint" id="hint-CROSS">—</span>
+      </button>
+      <button class="action-xl" data-action="DRIBBLE"      onclick="explainerRun('DRIBBLE')"
+              onmouseenter="previewHint('DRIBBLE')" onmouseleave="clearPreview()">
+        <span class="ax-name">Dribble</span>
+        <span class="ax-hint" id="hint-DRIBBLE">—</span>
+      </button>
+      <button class="action-xl" data-action="SHOOT"        onclick="explainerRun('SHOOT')"
+              onmouseenter="previewHint('SHOOT')" onmouseleave="clearPreview()">
+        <span class="ax-name">Shoot</span>
+        <span class="ax-hint" id="hint-SHOOT">—</span>
+      </button>
+      <div class="exploratory-label" style="padding-top:2px">
+        Exploratory — the engine's expectation, not advice.
+      </div>
     </div>
-    <div class="sidebar-bottom">
-      <div class="queue-header">
-        Sequence <span class="queue-count" id="qCount"></span>
+
+    <!-- Analyst: all 11 actions -->
+    <div class="analyst-only">
+      <div class="palette-group">
+        <h4>Attack</h4>
+        <button class="action-sm attack" data-action="ADVANCE"      onclick="addToQueue('ADVANCE')">
+          <span class="a-label">Advance</span><span class="a-hint" id="ah-ADVANCE">—</span><span class="a-kbd">W</span>
+        </button>
+        <button class="action-sm attack" data-action="THROUGH_BALL" onclick="addToQueue('THROUGH_BALL')">
+          <span class="a-label">Through ball</span><span class="a-hint" id="ah-THROUGH_BALL">—</span><span class="a-kbd">T</span>
+        </button>
+        <button class="action-sm attack" data-action="DRIBBLE"      onclick="addToQueue('DRIBBLE')">
+          <span class="a-label">Dribble</span><span class="a-hint" id="ah-DRIBBLE">—</span><span class="a-kbd">E</span>
+        </button>
+        <button class="action-sm attack" data-action="SHOOT"        onclick="addToQueue('SHOOT')">
+          <span class="a-label">Shoot</span><span class="a-hint" id="ah-SHOOT">—</span><span class="a-kbd">Space</span>
+        </button>
+        <button class="action-sm attack" data-action="CROSS"        onclick="addToQueue('CROSS')">
+          <span class="a-label">Cross</span><span class="a-hint" id="ah-CROSS">—</span><span class="a-kbd">C</span>
+        </button>
       </div>
-      <div id="qList" class="queue-list">
-        <div class="queue-empty">Click actions above to build a play</div>
+      <div class="palette-group">
+        <h4>Build-up</h4>
+        <button class="action-sm build" data-action="SWITCH_LEFT"  onclick="addToQueue('SWITCH_LEFT')">
+          <span class="a-label">Switch left</span><span class="a-hint" id="ah-SWITCH_LEFT">—</span><span class="a-kbd">A</span>
+        </button>
+        <button class="action-sm build" data-action="SWITCH_RIGHT" onclick="addToQueue('SWITCH_RIGHT')">
+          <span class="a-label">Switch right</span><span class="a-hint" id="ah-SWITCH_RIGHT">—</span><span class="a-kbd">D</span>
+        </button>
+        <button class="action-sm build" data-action="HOLD"         onclick="addToQueue('HOLD')">
+          <span class="a-label">Keep possession</span><span class="a-hint" id="ah-HOLD">—</span><span class="a-kbd">S</span>
+        </button>
+        <button class="action-sm build" data-action="KEEPER_BALL"  onclick="addToQueue('KEEPER_BALL')">
+          <span class="a-label">Play out from back</span><span class="a-hint" id="ah-KEEPER_BALL">—</span><span class="a-kbd">G</span>
+        </button>
       </div>
-      <div class="btn-row" style="margin-bottom:4px">
-        <button class="btn btn-clear" onclick="clearAll()">Clear</button>
-        <button class="btn" id="suggestBtn" onclick="fetchSuggest()"
-                style="background:var(--surface2);color:var(--purple);border-color:var(--purple)"
-                disabled>&#128161; Suggest</button>
+      <div class="palette-group" style="margin-bottom:8px">
+        <h4>Defensive</h4>
+        <button class="action-sm defend" data-action="PRESS"     onclick="addToQueue('PRESS')">
+          <span class="a-label">High press</span><span class="a-hint" id="ah-PRESS">—</span><span class="a-kbd">P</span>
+        </button>
+        <button class="action-sm defend" data-action="LOW_BLOCK" onclick="addToQueue('LOW_BLOCK')">
+          <span class="a-label">Low block</span><span class="a-hint" id="ah-LOW_BLOCK">—</span><span class="a-kbd">L</span>
+        </button>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-run" id="runBtn" onclick="runSim()" disabled style="flex:1">&#9654; Run</button>
+      <div class="exploratory-label" style="padding-bottom:8px">
+        Exploratory — the engine's expectation, not advice.
       </div>
-      <div class="sim-options">
-        <label class="opt-row" title="Team B picks the action that minimises your P(shot) each step">
+    </div>
+
+    <!-- Run button (Analyst only) -->
+    <div class="run-wrap analyst-only">
+      <button class="btn-run" id="runBtn" onclick="runSim()" disabled>▶ Run sequence</button>
+    </div>
+
+    <!-- Sequence builder (progressive disclosure) -->
+    <details class="disclosure" id="seqBuilderDisc">
+      <summary>
+        Build a sequence
+        <span class="disc-chevron">›</span>
+      </summary>
+      <div class="disclosure-body">
+        <div id="qList" class="queue-list">
+          <div class="queue-empty">Tap actions to chain a play</div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-sm" onclick="clearAll()">Clear</button>
+          <button class="btn-sm analyst-only" id="runBtn2" onclick="runSim()" disabled
+                  style="border-color:var(--green);color:var(--green)">▶ Run</button>
+        </div>
+        <!-- Explainer: replay accumulated steps -->
+        <button class="btn-sm explainer-only" onclick="replaySteps()"
+                id="replayBtn" style="width:100%;margin-top:6px;display:none">
+          ↩ Replay full sequence
+        </button>
+      </div>
+    </details>
+
+    <!-- Advanced controls (progressive disclosure) -->
+    <details class="disclosure" id="advancedDisc">
+      <summary>
+        Advanced
+        <span class="disc-chevron">›</span>
+      </summary>
+      <div class="disclosure-body">
+        <label class="opt-row" title="Team B picks actions that reduce your shot chance">
           <input type="checkbox" id="chkAdversarial" onchange="S.adversarial=this.checked">
-          <span>Adversarial defense</span>
+          <span>Defenders react</span>
         </label>
-        <label class="opt-row" title="Run multiple samples with z-space noise to quantify outcome uncertainty">
-          <span>Samples</span>
-          <select id="selSamples" onchange="S.nSamples=+this.value" style="margin-left:auto">
-            <option value="1" selected>1 (deterministic)</option>
+        <label class="opt-row">
+          <span>Variations</span>
+          <select class="opt-select" id="selSamples" onchange="S.nSamples=+this.value">
+            <option value="1" selected>1 (set)</option>
             <option value="5">5</option>
-            <option value="10">10 (stochastic)</option>
+            <option value="10">10</option>
           </select>
         </label>
-        <label class="opt-row" title="Cap per-player movement per step so players flow smoothly instead of teleporting">
-          <span>Continuity</span>
-          <select id="selContinuity" onchange="S.continuity=+this.value" style="margin-left:auto">
-            <option value="0" selected>Off</option>
-            <option value="0.3">Loose (30%)</option>
-            <option value="0.15">Realistic (15%)</option>
-            <option value="0.05">Tight (5%)</option>
+        <label class="opt-row">
+          <span>Movement smoothing</span>
+          <select class="opt-select" id="selContinuity" onchange="S.continuity=+this.value">
+            <option value="0">Off</option>
+            <option value="0.3">Loose</option>
+            <option value="0.15" selected>Realistic</option>
+            <option value="0.05">Tight</option>
           </select>
         </label>
+        <!-- Analyst: explore panel -->
+        <div class="analyst-only" style="margin-top:8px;border-top:0.5px solid var(--border);padding-top:8px">
+          <button class="btn-sm" onclick="fetchSuggest()" id="suggestBtn" disabled
+                  style="width:100%;color:var(--purple);border-color:var(--purple)">
+            Explore what each action does
+          </button>
+          <div id="suggestList" style="margin-top:6px"></div>
+        </div>
       </div>
-      <div style="margin-top:6px">
-        <button class="btn" id="optBtn" onclick="openOptimizer()"
-                style="width:100%;background:var(--surface2);color:var(--purple);border-color:var(--purple)"
-                disabled>&#128270; Find best sequence</button>
-      </div>
-    </div>
+    </details>
+
   </aside>
 
+  <!-- Main -->
   <main class="main">
+
+    <!-- Pitch -->
     <div class="pitch-wrap" id="pitchWrap">
       <canvas id="pitch"></canvas>
-      <div class="step-badge" id="badge">
-        <div class="badge-action" id="badgeAction"></div>
-        <div class="badge-def"    id="badgeDef"></div>
-      </div>
-      <div class="loading-overlay" id="loader">Running simulation&hellip;</div>
+      <div class="loading-overlay" id="loader">Simulating…</div>
     </div>
 
-    <div class="suggest-panel" id="suggestPanel">
-      <div class="suggest-header">
-        <span>&#128161; Best next action</span>
-        <button class="suggest-close" onclick="document.getElementById('suggestPanel').classList.remove('visible')">&#215;</button>
-      </div>
-      <div class="suggest-list" id="suggestList"></div>
+    <!-- Legend -->
+    <div class="pitch-legend non-presenter">
+      <div class="legend-item"><span class="legend-dot a"></span><span id="legendA">Team A</span></div>
+      <div class="legend-item"><span class="legend-dot b"></span><span id="legendB">Team B</span></div>
+      <div class="legend-item"><span class="legend-dot carrier"></span>Player on the ball</div>
+      <div class="legend-item"><span class="legend-threat"></span>Threat space</div>
     </div>
 
-    <div class="suggest-panel" id="optimizerPanel" style="top:auto;bottom:4px;max-height:360px">
-      <div class="suggest-header">
-        <span>&#128270; Sequence optimizer</span>
-        <button class="suggest-close" onclick="document.getElementById('optimizerPanel').classList.remove('visible')">&#215;</button>
+    <!-- Metrics -->
+    <div class="metrics-row">
+      <!-- Primary: shot chance -->
+      <div class="metric-card">
+        <div class="metric-label">Chance of a shot this possession</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="shotVal">—</span>
+          <span class="metric-delta-hero flat" id="shotDelta"></span>
+        </div>
+        <div class="metric-sub" id="shotSub"></div>
+        <div class="metric-track"><div class="metric-fill" id="shotBar" style="width:0%;background:var(--gold)"></div></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <label style="font-size:11px;color:var(--muted)">Depth
-          <select id="optDepth" style="margin-left:4px">
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4" selected>4</option>
-            <option value="5">5</option>
-          </select>
-        </label>
-        <label style="font-size:11px;color:var(--muted)">Beam
-          <select id="optBeam" style="margin-left:4px">
-            <option value="1">1</option>
-            <option value="3" selected>3</option>
-            <option value="5">5</option>
-          </select>
-        </label>
-        <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="optAdversarial"> Adversarial
-        </label>
-        <button class="btn btn-run" id="optRunBtn" onclick="runOptimizer()" style="margin-left:auto;padding:3px 10px;font-size:11px">Run</button>
+      <!-- Secondary: reach attacking third -->
+      <div class="metric-card secondary">
+        <div class="metric-label">Reach attacking third</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="finVal">—</span>
+          <span class="metric-delta-sm flat" id="finDelta"></span>
+        </div>
+        <div class="metric-track"><div class="metric-fill" id="finBar" style="width:0%;background:var(--green)"></div></div>
       </div>
-      <div class="suggest-list" id="optimizerResults" style="max-height:260px;overflow-y:auto">
-        <div style="color:var(--muted);font-size:11px;padding:8px">Configure and click Run to find optimal sequences.</div>
+      <!-- Secondary: advance a zone -->
+      <div class="metric-card secondary">
+        <div class="metric-label">Advance a zone</div>
+        <div class="metric-value-row">
+          <span class="metric-value" id="advVal">—</span>
+          <span class="metric-delta-sm flat" id="advDelta"></span>
+        </div>
+        <div class="metric-track"><div class="metric-fill" id="advBar" style="width:0%;background:var(--blue)"></div></div>
       </div>
     </div>
 
+    <!-- Commentary -->
     <div class="commentary" id="commentaryBar">
       <span class="commentary-icon">🎙</span>
-      <span class="commentary-text muted" id="commentaryText">Commentary will appear here after simulation runs</span>
+      <span class="commentary-text muted" id="commentaryText">
+        Pick an action to see how the play reshapes.
+      </span>
     </div>
 
-    <div class="playback">
-      <button class="ctrl" id="btnPrev" onclick="seek(S.step-1)" disabled>&#9664;</button>
-      <button class="ctrl" id="btnPlay" onclick="togglePlay()" disabled>&#9654; Play</button>
-      <button class="ctrl" id="btnNext" onclick="seek(S.step+1)" disabled>Next &#9654;</button>
-      <span class="step-ctr" id="stepCtr">&mdash;</span>
-      <button class="ctrl" id="btnHeat" onclick="toggleHeatmap()" disabled title="Heatmap — player density across all steps">&#128293;</button>
-      <button class="ctrl" onclick="shareURL()" title="Copy shareable link to clipboard">&#128279;</button>
+    <!-- Playback -->
+    <div class="playback non-presenter" id="playbackBar" style="display:none">
+      <button class="ctrl" id="btnPrev" onclick="seek(S.step-1)" disabled>◀</button>
+      <button class="ctrl" id="btnPlay" onclick="togglePlay()" disabled>▶ Play</button>
+      <button class="ctrl" id="btnNext" onclick="seek(S.step+1)" disabled>Next ▶</button>
+      <span class="step-ctr" id="stepCtr">—</span>
+      <span class="peak-badge" id="peakBadge">↑ Most dangerous generated frame</span>
+      <button class="ctrl non-presenter" onclick="shareURL()" title="Copy link">🔗</button>
       <select class="speed-sel" id="speedSel">
         <option value="1600">Slow</option>
         <option value="900" selected>Normal</option>
@@ -449,119 +681,124 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 3px; }
       </select>
     </div>
 
-    <div class="timeline" id="timeline">
-      <span class="tl-empty">Run a sequence to see the playback timeline</span>
-    </div>
+    <!-- Timeline -->
+    <div class="timeline" id="timeline" style="display:none"></div>
 
-    <div class="prob-section">
-      <div class="prob-row" id="pAdv">
-        <div class="prob-meta">
-          <span>P(Advance)</span>
-          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
-        </div>
-        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--blue)"></div></div>
-      </div>
-      <div class="prob-row" id="pShot">
-        <div class="prob-meta">
-          <span>P(Shot)</span>
-          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
-        </div>
-        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--gold)"></div></div>
-      </div>
-      <div class="prob-row" id="pFin">
-        <div class="prob-meta">
-          <span>P(Final 3rd)</span>
-          <span><span class="prob-pct">&mdash;</span> <span class="prob-delta"></span></span>
-        </div>
-        <div class="prob-track"><div class="prob-fill" style="width:0%;background:var(--green)"></div></div>
-      </div>
-    </div>
   </main>
+</div>
+
+<!-- Onboarding overlay -->
+<div class="onboarding-overlay" id="onboardingOverlay">
+  <div class="coachmark" id="coachmark">
+    <div class="coachmark-step" id="coachStep">1 of 3</div>
+    <div class="coachmark-text" id="coachText"></div>
+    <div class="coachmark-btns">
+      <button class="coachmark-skip" onclick="dismissOnboarding()">Skip</button>
+      <button class="coachmark-next" onclick="nextCoach()">Next →</button>
+    </div>
+  </div>
 </div>
 
 <script>
 // ── Action definitions ────────────────────────────────────────────────────────
 const ACTIONS = [
-  { name:"ADVANCE",      label:"Advance",        key:"W",     cls:"attack" },
-  { name:"THROUGH_BALL", label:"Through Ball",   key:"T",     cls:"attack" },
-  { name:"DRIBBLE",      label:"Dribble",        key:"E",     cls:"attack" },
-  { name:"SHOOT",        label:"Shoot",          key:"Space", cls:"attack" },
-  { name:"CROSS",        label:"Cross",          key:"C",     cls:"attack" },
-  { name:"SWITCH_LEFT",  label:"Switch Left",    key:"A",     cls:"build"  },
-  { name:"SWITCH_RIGHT", label:"Switch Right",   key:"D",     cls:"build"  },
-  { name:"HOLD",         label:"Hold / Recycle", key:"S",     cls:"build"  },
-  { name:"KEEPER_BALL",  label:"Play Out",       key:"G",     cls:"build"  },
-  { name:"PRESS",        label:"High Press",     key:"P",     cls:"defend" },
-  { name:"LOW_BLOCK",    label:"Low Block",      key:"L",     cls:"defend" },
+  { name:"ADVANCE",      label:"Advance",             key:"W",     cls:"attack" },
+  { name:"THROUGH_BALL", label:"Through ball",        key:"T",     cls:"attack" },
+  { name:"DRIBBLE",      label:"Dribble",             key:"E",     cls:"attack" },
+  { name:"SHOOT",        label:"Shoot",               key:"Space", cls:"attack" },
+  { name:"CROSS",        label:"Cross",               key:"C",     cls:"attack" },
+  { name:"SWITCH_LEFT",  label:"Switch left",         key:"A",     cls:"build"  },
+  { name:"SWITCH_RIGHT", label:"Switch right",        key:"D",     cls:"build"  },
+  { name:"HOLD",         label:"Keep possession",     key:"S",     cls:"build"  },
+  { name:"KEEPER_BALL",  label:"Play out from back",  key:"G",     cls:"build"  },
+  { name:"PRESS",        label:"High press",          key:"P",     cls:"defend" },
+  { name:"LOW_BLOCK",    label:"Low block",           key:"L",     cls:"defend" },
 ];
-const GROUP_NAMES = { attack:"Attack", build:"Build-Up", defend:"Defensive" };
+
+const ZONE_NAMES = ["Defensive third", "Middle third", "Attacking third", "Near goal"];
+const PHASE_NAMES = ["Open play", "Counter", "Set piece", "GK dist."];
 const KEY_MAP = {
   "w":"ADVANCE","W":"ADVANCE","ArrowUp":"ADVANCE",
   "s":"HOLD","S":"HOLD","ArrowDown":"HOLD",
   "a":"SWITCH_LEFT","A":"SWITCH_LEFT","ArrowLeft":"SWITCH_LEFT",
   "d":"SWITCH_RIGHT","D":"SWITCH_RIGHT","ArrowRight":"SWITCH_RIGHT",
-  "p":"PRESS","P":"PRESS",
-  "l":"LOW_BLOCK","L":"LOW_BLOCK",
-  " ":"SHOOT",
-  "e":"DRIBBLE","E":"DRIBBLE",
-  "t":"THROUGH_BALL","T":"THROUGH_BALL",
-  "c":"CROSS","C":"CROSS",
+  "p":"PRESS","P":"PRESS","l":"LOW_BLOCK","L":"LOW_BLOCK",
+  " ":"SHOOT","e":"DRIBBLE","E":"DRIBBLE",
+  "t":"THROUGH_BALL","T":"THROUGH_BALL","c":"CROSS","C":"CROSS",
   "g":"KEEPER_BALL","G":"KEEPER_BALL",
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
+  mode: "explainer",
   teamA: null, teamB: null,
-  squadA: [],   // [{jersey_number, name}, ...] sorted by jersey_number for Team A
-  squadB: [],   // same for Team B
-  queue:      [],    // [{action, alpha}]
-  frames:     [],    // ActionResult[] returned by /api/simulate_sequence
-  step:       -1,
-  playing:    false,
-  timer:      null,
-  heatmap:    false,
-  adversarial:  false,  // Team B uses optimal counter-action
-  nSamples:     1,      // 1 = deterministic; 5/10 = stochastic
-  continuity:   0.0,    // max per-player displacement per step (0 = off)
+  teamNameA: "Team A", teamNameB: "Team B",
+  squadA: [], squadB: [],
+  queue: [],            // analyst queue
+  frames: [],           // sequence frames (batch or accumulated steps)
+  step: -1,
+  playing: false, timer: null,
+  adversarial: false, nSamples: 1, continuity: 0.15,
+  hints: {},            // action → p_shot_delta (preloaded)
+  prevProbs: null,      // for delta calculation in explainer mode
   commentaryEnabled: true,
 };
 
+// ── Default formation (4-3-3) ─────────────────────────────────────────────────
+const DEF_POS_A = [
+  [0.05,0.50],[0.20,0.20],[0.20,0.40],[0.20,0.60],[0.20,0.80],
+  [0.42,0.25],[0.42,0.50],[0.42,0.75],
+  [0.65,0.18],[0.65,0.82],[0.70,0.50],
+];
+const DEF_POS_B = [
+  [0.95,0.50],[0.80,0.80],[0.80,0.60],[0.80,0.40],[0.80,0.20],
+  [0.58,0.75],[0.58,0.50],[0.58,0.25],
+  [0.35,0.82],[0.35,0.18],[0.30,0.50],
+];
+const DEF_POSITIONS = [...DEF_POS_A, ...DEF_POS_B];
+const DEF_ROLES = DEF_POSITIONS.map((_,i) => [i < 11 ? 1 : 0, i === 6 ? 1 : 0]);
+const DEF_MASK  = new Array(22).fill(false);
+
+let _prevPositions = null;  // for smooth animation
+let _animId = null;
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
-  buildPalette();
   resizeCanvas();
-  drawEmpty();
+  drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
   await loadTeams();
-  parseURLSequence();   // restore queue from ?seq= if present
+  parseURLSequence();
+  checkOnboarding();
+  // Analyst mode: open advanced by default
+  if (S.mode === "analyst") document.getElementById("advancedDisc").open = true;
 });
 window.addEventListener("resize", () => {
   resizeCanvas();
-  if (S.step >= 0) renderFrame(S.step); else drawEmpty();
+  if (S.step >= 0) renderFrame(S.step);
+  else drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
 });
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   const a = KEY_MAP[e.key];
-  if (a) { e.preventDefault(); addToQueue(a); }
-  if (e.key === "Enter") runSim();
+  if (a) {
+    e.preventDefault();
+    if (S.mode === "explainer") explainerRun(a);
+    else addToQueue(a);
+  }
+  if (e.key === "Enter" && S.mode !== "explainer") runSim();
 });
 
-// ── Palette ───────────────────────────────────────────────────────────────────
-function buildPalette() {
-  const pal = document.getElementById("palette");
-  for (const g of ["attack","build","defend"]) {
-    const items = ACTIONS.filter(a => a.cls === g);
-    const div = document.createElement("div");
-    div.className = "palette-group";
-    div.innerHTML = `<h4>${GROUP_NAMES[g]}</h4>`;
-    for (const a of items) {
-      const btn = document.createElement("button");
-      btn.className = `action-btn ${a.cls}`;
-      btn.innerHTML = `${a.label}<span class="kbd">${a.key}</span>`;
-      btn.onclick = () => addToQueue(a.name);
-      div.appendChild(btn);
-    }
-    pal.appendChild(div);
+// ── Mode switching ─────────────────────────────────────────────────────────────
+function setMode(m) {
+  S.mode = m;
+  document.documentElement.setAttribute("data-mode", m);
+  document.querySelectorAll(".mode-btn").forEach((btn, i) => {
+    btn.classList.toggle("active", ["explainer","analyst","presenter"][i] === m);
+  });
+  if (m === "analyst") {
+    document.getElementById("advancedDisc").open = true;
   }
+  updateRunBtn();
 }
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
@@ -570,26 +807,42 @@ async function loadTeams() {
     const r = await fetch("/api/teams");
     if (!r.ok) return;
     const teams = await r.json();
-    const [sA, sB] = [document.getElementById("selA"), document.getElementById("selB")];
+    const [sA, sB] = ["selA","selB"].map(id => document.getElementById(id));
+    sA.innerHTML = sB.innerHTML = "<option value=''>— select —</option>";
     for (const t of teams) {
       sA.appendChild(new Option(t.team_name, t.team_id));
       sB.appendChild(new Option(t.team_name, t.team_id));
     }
     if (teams.length >= 2) {
-      sA.value = teams[0].team_id; S.teamA = teams[0].team_id;
-      sB.value = teams[1].team_id; S.teamB = teams[1].team_id;
-      fetchSquad(S.teamA, "A");
-      fetchSquad(S.teamB, "B");
+      sA.value = teams[0].team_id; onTeamChange("A");
+      sB.value = teams[1].team_id; onTeamChange("B");
     }
-    sA.onchange = () => { S.teamA = +sA.value || null; updateSuggestBtn(); if (S.teamA) fetchSquad(S.teamA, "A"); };
-    sB.onchange = () => { S.teamB = +sB.value || null; updateSuggestBtn(); if (S.teamB) fetchSquad(S.teamB, "B"); };
-    updateSuggestBtn();
+    sA.onchange = () => onTeamChange("A");
+    sB.onchange = () => onTeamChange("B");
   } catch(e) { console.error(e); }
 }
-function updateSuggestBtn() {
-  const off = !S.teamA || !S.teamB;
-  document.getElementById("suggestBtn").disabled = off;
-  document.getElementById("optBtn").disabled     = off;
+
+function onTeamChange(side) {
+  const sel = document.getElementById("sel" + side);
+  const tid = +sel.value || null;
+  const name = sel.options[sel.selectedIndex]?.text || ("Team " + side);
+  if (side === "A") { S.teamA = tid; S.teamNameA = name; }
+  else              { S.teamB = tid; S.teamNameB = name; }
+  document.getElementById("legend" + side).textContent = name;
+  document.getElementById("dirChip").textContent = S.teamNameA + " attacking →";
+  if (tid) fetchSquad(tid, side);
+  updateRunBtn();
+  if (S.teamA && S.teamB) preloadHints();
+}
+
+function updateRunBtn() {
+  const ready = !!(S.teamA && S.teamB);
+  ["runBtn","runBtn2"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !ready || S.queue.length === 0;
+  });
+  const sb = document.getElementById("suggestBtn");
+  if (sb) sb.disabled = !ready;
 }
 
 async function fetchSquad(teamId, side) {
@@ -597,741 +850,729 @@ async function fetchSquad(teamId, side) {
     const res = await fetch(`/api/squad/${teamId}`);
     if (!res.ok) return;
     const data = await res.json();
-    // squad is already sorted by jersey_number; index 0 = rank 1 (GK), etc.
     if (side === "A") S.squadA = data.squad || [];
     else              S.squadB = data.squad || [];
-  } catch(e) { /* silently degrade — commentary falls back to shirt numbers */ }
+  } catch {}
 }
 
-// ── Queue ─────────────────────────────────────────────────────────────────────
-function addToQueue(name) {
-  if (S.queue.length >= 12) return;
-  S.queue.push({ action: name, alpha: 1.0 });
-  redrawQueue();
-}
-function removeStep(i) { S.queue.splice(i, 1); redrawQueue(); }
-
-function setAlpha(i, val) {
-  S.queue[i].alpha = parseFloat(val);
-  const label = document.getElementById(`alpha-val-${i}`);
-  if (label) label.textContent = Math.round(val * 100) + "%";
-}
-
-function toggleAlpha(i) {
-  const el = document.getElementById(`alpha-${i}`);
-  if (el) el.classList.toggle("open");
-}
-
-function redrawQueue() {
-  const list = document.getElementById("qList");
-  const ctr  = document.getElementById("qCount");
-  const run  = document.getElementById("runBtn");
-  const sug  = document.getElementById("suggestBtn");
-  ctr.textContent = S.queue.length ? `(${S.queue.length})` : "";
-  run.disabled = S.queue.length === 0;
-  sug.disabled = !S.teamA || !S.teamB;
-  if (!S.queue.length) {
-    list.innerHTML = '<div class="queue-empty">Click actions above to build a play</div>';
-    return;
-  }
-  list.innerHTML = S.queue.map((q, i) => {
-    const a   = ACTIONS.find(a => a.name === q.action);
-    const pct = Math.round(q.alpha * 100);
-    return `<div style="border:1px solid var(--border);border-radius:4px;margin-bottom:2px">
-      <div class="queue-item" style="cursor:pointer" onclick="toggleAlpha(${i})">
-        <span class="q-num">${i+1}</span>
-        <span class="q-lbl">${a ? a.label : q.action}</span>
-        <span style="font-size:9px;color:var(--muted);margin-right:4px">${pct}%</span>
-        <button class="q-rm" onclick="event.stopPropagation();removeStep(${i})">&#215;</button>
-      </div>
-      <div class="q-alpha" id="alpha-${i}">
-        <label>Intensity
-          <input type="range" min="0.1" max="1.0" step="0.1" value="${q.alpha}"
-                 oninput="setAlpha(${i}, this.value)">
-          <span class="q-alpha-val" id="alpha-val-${i}">${pct}%</span>
-        </label>
-      </div>
-    </div>`;
-  }).join("");
-}
-
-function clearAll() {
-  S.queue = []; S.frames = []; S.step = -1; S.heatmap = false; stopPlay();
-  redrawQueue(); drawTimeline([]); clearProbs();
-  document.getElementById("badge").classList.remove("visible");
-  document.getElementById("suggestPanel").classList.remove("visible");
-  document.getElementById("btnHeat").classList.remove("active");
-  document.getElementById("btnHeat").disabled = true;
-  setCommentary("Commentary will appear here after simulation runs", true);
-  updateControls(); drawEmpty();
-}
-
-// ── Suggest ───────────────────────────────────────────────────────────────────
-async function fetchSuggest() {
+// ── Hint preloading ────────────────────────────────────────────────────────────
+async function preloadHints() {
   if (!S.teamA || !S.teamB) return;
-  const panel = document.getElementById("suggestPanel");
-  const list  = document.getElementById("suggestList");
-  panel.classList.add("visible");
-  list.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:4px 0">Loading&hellip;</div>';
-
-  // Use last frame's context if available, otherwise initial inputs
-  const ctx = S.frames.length ? S.frames[S.step].context : {
-    score_diff: +document.getElementById("iScore").value || 0,
-    minute:     +document.getElementById("iMin").value   || 45,
-    zone:       +document.getElementById("iZone").value  || 1,
-    phase:      +document.getElementById("iPhase").value || 0,
-    poss_team:  0,
-  };
-
   try {
     const res = await fetch("/api/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ team_id_a: +S.teamA, team_id_b: +S.teamB, context: ctx }),
+      body: JSON.stringify({ team_id_a: +S.teamA, team_id_b: +S.teamB, context: currentCtx() }),
     });
     const data = await res.json();
-    renderSuggest(data.suggestions);
-  } catch(e) {
-    list.innerHTML = `<div style="color:var(--red);font-size:11px">${e.message}</div>`;
+    S.hints = {};
+    for (const s of data.suggestions) S.hints[s.action] = s.p_shot_delta;
+    updateHintLabels();
+  } catch {}
+}
+
+function updateHintLabels() {
+  for (const action of Object.keys(S.hints)) {
+    const delta = S.hints[action];
+    const pts = Math.round(delta * 100);
+    const cls = pts > 0 ? "pos" : pts < 0 ? "neg" : "";
+    const txt = pts > 0 ? `↑${pts} pts` : pts < 0 ? `↓${Math.abs(pts)} pts` : "±0 pts";
+    // Explainer hints
+    const h1 = document.getElementById("hint-" + action);
+    if (h1) { h1.textContent = txt; h1.className = "ax-hint " + cls; }
+    // Analyst hints
+    const h2 = document.getElementById("ah-" + action);
+    if (h2) { h2.textContent = txt; h2.className = "a-hint " + cls; }
   }
 }
 
-function renderSuggest(rows) {
-  const list = document.getElementById("suggestList");
-  const maxAbs = Math.max(...rows.map(r => Math.abs(r.p_shot_delta)), 0.001);
-  list.innerHTML = rows.map((r, i) => {
-    const pos   = r.p_shot_delta >= 0;
-    const sign  = pos ? "+" : "";
-    const pct   = Math.round(Math.abs(r.p_shot_delta) / maxAbs * 100);
-    return `<div class="suggest-row">
-      <span class="suggest-rank">${i+1}</span>
-      <span class="suggest-name">${r.label}</span>
-      <div class="suggest-bar-wrap">
-        <div class="suggest-bar${pos?"":" neg"}" style="width:${pct}%"></div>
-      </div>
-      <span class="suggest-delta ${pos?"pos":"neg"}">${sign}${Math.round(r.p_shot_delta*100)}%</span>
-      <button class="suggest-add" onclick="addToQueue('${r.action}');document.getElementById('suggestPanel').classList.remove('visible')" title="Add to sequence">+</button>
-    </div>`;
-  }).join("");
+function previewHint(action) {
+  const delta = S.hints[action];
+  if (delta == null) return;
+  const pts = Math.round(delta * 100);
+  // Preview in shot metric
+  const dEl = document.getElementById("shotDelta");
+  dEl.textContent = (pts >= 0 ? "+" : "") + pts + " pts";
+  dEl.className = "metric-delta-hero " + (pts > 0 ? "pos" : pts < 0 ? "neg" : "flat");
+  document.querySelectorAll(".action-xl").forEach(b =>
+    b.classList.toggle("previewing", b.dataset.action === action));
 }
 
-// ── Optimizer ────────────────────────────────────────────────────────────────
-function openOptimizer() {
-  document.getElementById("optimizerPanel").classList.add("visible");
+function clearPreview() {
+  // Restore actual delta if we have frames
+  if (S.step >= 0 && S.frames[S.step]) {
+    const f = S.frames[S.step];
+    renderMetrics(f.probs, f.deltas, f.stds);
+  } else {
+    document.getElementById("shotDelta").textContent = "";
+    document.getElementById("shotDelta").className = "metric-delta-hero flat";
+  }
+  document.querySelectorAll(".action-xl").forEach(b => b.classList.remove("previewing"));
 }
 
-async function runOptimizer() {
-  if (!S.teamA || !S.teamB) return;
-  const btn     = document.getElementById("optRunBtn");
-  const results = document.getElementById("optimizerResults");
-  btn.disabled  = true;
-  btn.textContent = "Running…";
-  results.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">Searching… this may take a few seconds.</div>';
-
-  const ctx = S.frames.length ? S.frames[S.step].context : {
+// ── Context ────────────────────────────────────────────────────────────────────
+function currentCtx() {
+  // Use last frame's context if available
+  if (S.step >= 0 && S.frames[S.step]?.context) {
+    const c = S.frames[S.step].context;
+    return { score_diff: c.score_diff, minute: c.minute, zone: c.zone,
+             phase: c.phase, poss_team: c.poss_team || 0 };
+  }
+  return {
     score_diff: +document.getElementById("iScore").value || 0,
     minute:     +document.getElementById("iMin").value   || 45,
     zone:       +document.getElementById("iZone").value  || 1,
     phase:      +document.getElementById("iPhase").value || 0,
     poss_team:  0,
   };
+}
 
+// Update context bar pills from frame context
+function updateCtxBar(ctx) {
+  document.getElementById("iMin").value   = Math.round(ctx.minute);
+  document.getElementById("iScore").value = ctx.score_diff;
+  document.getElementById("iZone").value  = ctx.zone;
+  document.getElementById("iPhase").value = ctx.phase;
+}
+
+// Re-preload hints when context inputs change
+["iMin","iScore","iZone","iPhase"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => {
+    if (S.teamA && S.teamB) preloadHints();
+  });
+});
+
+// ── Explainer: single-step run ─────────────────────────────────────────────────
+async function explainerRun(action) {
+  if (!S.teamA || !S.teamB) return;
+  showLoader(true);
+  const prevProbs = S.step >= 0 ? S.frames[S.step]?.probs : null;
   try {
-    const res = await fetch("/api/optimize", {
+    const res = await fetch("/api/step", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        team_id_a:   +S.teamA,
-        team_id_b:   +S.teamB,
-        context:     ctx,
-        max_depth:   +document.getElementById("optDepth").value,
-        beam_width:  +document.getElementById("optBeam").value,
-        adversarial: document.getElementById("optAdversarial").checked,
+        action, team_id_a: +S.teamA, team_id_b: +S.teamB,
+        context: currentCtx(), alpha: 1.0,
       }),
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({detail: res.statusText}))).detail);
-    const data = await res.json();
-    renderOptimizerResults(data.sequences);
+    if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
+    const frame = await res.json();
+
+    // Compute delta vs previous step (not vs baseline)
+    if (prevProbs) {
+      frame.deltas = {
+        p_shot:        frame.probs.p_shot        - prevProbs.p_shot,
+        p_final_third: frame.probs.p_final_third - prevProbs.p_final_third,
+        p_advance:     frame.probs.p_advance     - prevProbs.p_advance,
+      };
+    }
+
+    S.frames.push(frame);
+    S.step = S.frames.length - 1;
+    animateToFrame(frame);
+    renderMetrics(frame.probs, frame.deltas, frame.stds, prevProbs);
+    fetchCommentary(frame, S.step);
+    if (frame.context) updateCtxBar(frame.context);
+    preloadHints();
+    showPlaybackControls();
+    updateSeqQueue();
   } catch(e) {
-    results.innerHTML = `<div style="color:var(--red);font-size:11px;padding:8px">${e.message}</div>`;
+    console.error(e);
   } finally {
-    btn.disabled = false;
-    btn.textContent = "Run";
+    showLoader(false);
   }
 }
 
-function renderOptimizerResults(sequences) {
-  const el = document.getElementById("optimizerResults");
-  if (!sequences.length) {
-    el.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:8px">No results.</div>';
+// Update the sequence display in the disclosure to show accumulated steps
+function updateSeqQueue() {
+  const list = document.getElementById("qList");
+  const rb   = document.getElementById("replayBtn");
+  if (!S.frames.length) {
+    list.innerHTML = '<div class="queue-empty">Tap actions to chain a play</div>';
+    if (rb) rb.style.display = "none";
     return;
   }
-  el.innerHTML = sequences.map((s, i) => {
-    const steps = s.sequence.map(step =>
-      `<span class="opt-step-badge" title="Defense: ${step.defense}">${step.label}</span>`
-    ).join(" → ");
-    return `<div class="opt-result">
-      <div class="opt-result-header">
-        <span class="suggest-rank">${i+1}</span>
-        <span style="flex:1;min-width:0">${steps}</span>
-        <span style="color:var(--gold);font-weight:600;white-space:nowrap">P(shot) ${Math.round(s.p_shot_final*100)}%</span>
-      </div>
-      <button class="btn" style="font-size:10px;padding:2px 8px;margin-top:4px;width:100%"
-              onclick='loadOptSequence(${JSON.stringify(s.sequence)})'>&#9654; Load into queue</button>
-    </div>`;
-  }).join("");
-}
-
-function loadOptSequence(steps) {
-  S.queue = steps.map(s => ({ action: s.action, alpha: s.alpha }));
-  redrawQueue();
-  document.getElementById("optimizerPanel").classList.remove("visible");
-}
-
-// ── Heatmap ───────────────────────────────────────────────────────────────────
-function toggleHeatmap() {
-  if (!S.frames.length) return;
-  S.heatmap = !S.heatmap;
-  const btn = document.getElementById("btnHeat");
-  btn.classList.toggle("active", S.heatmap);
-  if (S.heatmap) drawHeatmap(); else renderFrame(S.step);
-}
-
-function drawHeatmap() {
-  resizeCanvas();
-  drawPitch();
-  const canvas = document.getElementById("pitch");
-  const ctx    = canvas.getContext("2d");
-
-  // Accumulate Gaussian blobs on a float grid
-  const W = CW, H = CH;
-  const gridA = new Float32Array(W * H);
-  const gridB = new Float32Array(W * H);
-  const sigma = Math.max(10, CW * 0.022);
-
-  for (const f of S.frames) {
-    for (let i = 0; i < f.positions.length; i++) {
-      if (f.mask[i]) continue;
-      const bx = Math.round(px(f.positions[i][0]));
-      const by = Math.round(py(f.positions[i][1]));
-      const grid = f.roles[i][0] > 0.5 ? gridA : gridB;
-      // Splat a small Gaussian
-      const r = Math.round(sigma * 2);
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const nx = bx + dx, ny = by + dy;
-          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-          const v = Math.exp(-(dx*dx + dy*dy) / (2 * sigma * sigma));
-          grid[ny * W + nx] += v;
-        }
-      }
-    }
+  if (S.mode === "explainer") {
+    list.innerHTML = S.frames.map((f, i) =>
+      `<div class="queue-item">
+        <span class="q-num">${i+1}</span>
+        <span class="q-lbl">${actionLabel(f.action)}</span>
+        <span style="font-size:9px;color:var(--muted)">${f.probs ? Math.round(f.probs.p_shot*100)+"%" : ""}</span>
+      </div>`
+    ).join("");
+    if (rb) rb.style.display = S.frames.length > 1 ? "block" : "none";
   }
+}
 
-  // Render as semi-transparent overlay
-  const imgData = ctx.createImageData(W, H);
-  const maxA = Math.max(...gridA) || 1;
-  const maxB = Math.max(...gridB) || 1;
-  for (let i = 0; i < W * H; i++) {
-    const a = gridA[i] / maxA;
-    const b = gridB[i] / maxB;
-    const idx = i * 4;
-    imgData.data[idx]   = Math.round(88  * b + 240 * a);  // R: blue→gold
-    imgData.data[idx+1] = Math.round(166 * b + 192 * a);  // G
-    imgData.data[idx+2] = Math.round(255 * b + 64  * a);  // B
-    imgData.data[idx+3] = Math.round(Math.min((a + b) * 180, 200));
+function actionLabel(name) {
+  return ACTIONS.find(a => a.name === name)?.label || name;
+}
+
+// ── Analyst: queue ─────────────────────────────────────────────────────────────
+function addToQueue(name) {
+  if (S.queue.length >= 12) return;
+  S.queue.push({ action: name, alpha: 1.0 });
+  redrawAnalystQueue();
+  updateRunBtn();
+}
+function removeStep(i) { S.queue.splice(i,1); redrawAnalystQueue(); updateRunBtn(); }
+function redrawAnalystQueue() {
+  const list = document.getElementById("qList");
+  if (!S.queue.length) {
+    list.innerHTML = '<div class="queue-empty">Tap actions to chain a play</div>';
+    return;
   }
-  ctx.putImageData(imgData, 0, 0);
-
-  // Re-draw pitch lines on top
-  const pitchCanvas = document.createElement("canvas");
-  pitchCanvas.width = W; pitchCanvas.height = H;
-  const pCtx = pitchCanvas.getContext("2d");
-  // Just the lines, transparent background
-  drawPitchLines(pCtx);
-  ctx.drawImage(pitchCanvas, 0, 0);
+  list.innerHTML = S.queue.map((q,i) =>
+    `<div class="queue-item">
+      <span class="q-num">${i+1}</span>
+      <span class="q-lbl">${actionLabel(q.action)}</span>
+      <button class="q-rm" onclick="removeStep(${i})">×</button>
+    </div>`
+  ).join("");
 }
 
-function drawPitchLines(ctx) {
-  const P = 0.04;
-  ctx.strokeStyle = "rgba(255,255,255,0.5)";
-  ctx.lineWidth   = 1.2;
-  ctx.strokeRect(px(P), py(P), px(1-2*P), py(1-2*P));
-  ctx.beginPath(); ctx.moveTo(px(0.5), py(P)); ctx.lineTo(px(0.5), py(1-P)); ctx.stroke();
-  ctx.beginPath(); ctx.arc(px(0.5), py(0.5), px(0.087), 0, 2*Math.PI); ctx.stroke();
-  const [paW, paH, paT] = [0.157, 0.593, (1-0.593)/2];
-  ctx.strokeRect(px(P), py(paT), px(paW), py(paH));
-  ctx.strokeRect(px(1-P-paW), py(paT), px(paW), py(paH));
-  ctx.strokeStyle = "rgba(255,255,255,0.2)";
-  ctx.setLineDash([5,5]);
-  [1/3, 2/3].forEach(x => {
-    ctx.beginPath(); ctx.moveTo(px(x), py(P)); ctx.lineTo(px(x), py(1-P)); ctx.stroke();
-  });
-  ctx.setLineDash([]);
-}
-
-// ── Share URL ─────────────────────────────────────────────────────────────────
-function shareURL() {
-  if (!S.queue.length) { alert("Build a sequence first."); return; }
-  const seq = S.queue.map(q => `${q.action}:${q.alpha}`).join(",");
-  const url = `${location.origin}${location.pathname}?seq=${encodeURIComponent(seq)}`;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = event.currentTarget;
-    const orig = btn.innerHTML;
-    btn.innerHTML = "&#10003;";
-    setTimeout(() => { btn.innerHTML = orig; }, 1500);
-  });
-}
-
-function parseURLSequence() {
-  const params = new URLSearchParams(location.search);
-  const seq    = params.get("seq");
-  if (!seq) return;
-  for (const part of seq.split(",")) {
-    const [name, alpha] = part.split(":");
-    const action = ACTIONS.find(a => a.name === name);
-    if (action && S.queue.length < 12) {
-      S.queue.push({ action: name, alpha: parseFloat(alpha) || 1.0 });
-    }
-  }
-  if (S.queue.length) redrawQueue();
-}
-
-// ── Simulation ────────────────────────────────────────────────────────────────
+// ── Batch run (Analyst) ────────────────────────────────────────────────────────
 async function runSim() {
-  if (!S.teamA || !S.teamB) { alert("Select both teams first."); return; }
-  if (!S.queue.length) return;
+  if (!S.teamA || !S.teamB || !S.queue.length) return;
   stopPlay();
-  document.getElementById("loader").classList.add("visible");
-  document.getElementById("runBtn").disabled = true;
+  showLoader(true);
   try {
     const res = await fetch("/api/simulate_sequence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        team_id_a: +S.teamA,
-        team_id_b: +S.teamB,
-        context: {
-          score_diff: +document.getElementById("iScore").value || 0,
-          minute:     +document.getElementById("iMin").value   || 45,
-          zone:       +document.getElementById("iZone").value  || 1,
-          phase:      +document.getElementById("iPhase").value || 0,
-          poss_team:  0,
-        },
-        sequence:        S.queue,
+        team_id_a: +S.teamA, team_id_b: +S.teamB,
+        context: currentCtx(),
+        sequence: S.queue,
         minute_per_step: 0.5,
-        adversarial:     S.adversarial,
-        n_samples:       S.nSamples,
-        continuity:      S.continuity,
+        adversarial: S.adversarial,
+        n_samples: S.nSamples,
+        continuity: S.continuity,
       }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || "Server error");
-    }
+    if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
     const data = await res.json();
-    S.frames = data.frames; S.step = 0; S.heatmap = false;
-    drawTimeline(S.frames);
-    renderFrame(0);
+    S.frames = data.frames;
+    S.step = 0;
+    animateToFrame(S.frames[0]);
+    renderMetrics(S.frames[0].probs, S.frames[0].deltas, S.frames[0].stds);
+    fetchCommentary(S.frames[0], 0);
+    showPlaybackControls();
+    drawTimelineStrip(S.frames);
     updateControls();
-    document.getElementById("btnHeat").disabled = false;
-    document.getElementById("btnHeat").classList.remove("active");
-  } catch(e) {
-    alert("Simulation failed: " + e.message);
-  } finally {
-    document.getElementById("loader").classList.remove("visible");
-    document.getElementById("runBtn").disabled = S.queue.length === 0;
-  }
+  } catch(e) { alert("Simulation failed: " + e.message); }
+  finally { showLoader(false); }
 }
 
-// ── Playback ──────────────────────────────────────────────────────────────────
+async function replaySteps() {
+  // Re-run the full accumulated Explainer sequence as a batch
+  if (!S.frames.length) return;
+  const seq = S.frames.map(f => ({ action: f.action, alpha: 1.0 }));
+  S.queue = seq;
+  await runSim();
+  S.queue = [];
+}
+
+// ── Playback ───────────────────────────────────────────────────────────────────
 function seek(n) {
   if (!S.frames.length) return;
   S.step = Math.max(0, Math.min(n, S.frames.length - 1));
-  if (S.heatmap) { S.heatmap = false; document.getElementById("btnHeat").classList.remove("active"); }
-  renderFrame(S.step); updateControls();
+  const f = S.frames[S.step];
+  drawFormation(f.positions, f.roles, f.mask, f.probs);
+  renderMetrics(f.probs, f.deltas, f.stds);
+  fetchCommentary(f, S.step);
+  updateControls();
 }
 function togglePlay() { S.playing ? stopPlay() : startPlay(); }
 function startPlay() {
   if (S.step >= S.frames.length - 1) S.step = 0;
   S.playing = true;
-  document.getElementById("btnPlay").textContent = "&#9646;&#9646; Pause";
+  document.getElementById("btnPlay").textContent = "⏸ Pause";
   document.getElementById("btnPlay").classList.add("playing");
   tick();
 }
 function tick() {
   if (!S.playing) return;
-  renderFrame(S.step); updateControls();
+  seek(S.step);
   if (S.step < S.frames.length - 1) {
     S.step++;
     S.timer = setTimeout(tick, +document.getElementById("speedSel").value);
-  } else { stopPlay(); }
+  } else stopPlay();
 }
 function stopPlay() {
   S.playing = false; clearTimeout(S.timer);
-  document.getElementById("btnPlay").textContent = "&#9654; Play";
-  document.getElementById("btnPlay").classList.remove("playing");
+  const btn = document.getElementById("btnPlay");
+  btn.textContent = "▶ Play"; btn.classList.remove("playing");
 }
 function updateControls() {
   const n = S.frames.length;
   document.getElementById("btnPrev").disabled = n === 0 || S.step <= 0;
-  document.getElementById("btnNext").disabled = n === 0 || S.step >= n - 1;
+  document.getElementById("btnNext").disabled = n === 0 || S.step >= n-1;
   document.getElementById("btnPlay").disabled = n === 0;
   document.getElementById("stepCtr").textContent = n ? `Step ${S.step+1} / ${n}` : "—";
+  // Peak badge: find step with highest p_shot
+  if (n > 0) {
+    const peakIdx = S.frames.reduce((best, f, i) =>
+      (f.probs.p_shot > S.frames[best].probs.p_shot ? i : best), 0);
+    document.getElementById("peakBadge").classList.toggle("visible", S.step === peakIdx && n > 1);
+    document.querySelectorAll(".tl-step").forEach((el, i) => {
+      el.classList.toggle("active", i === S.step);
+      el.classList.toggle("peak", i === peakIdx && n > 1);
+    });
+  }
 }
 
-// ── Frame rendering ───────────────────────────────────────────────────────────
-function renderFrame(n) {
-  const f = S.frames[n]; if (!f) return;
-  drawPitch();
-  drawPlayers(f.positions, f.roles, f.mask);
-  const badge = document.getElementById("badge");
-  document.getElementById("badgeAction").textContent = f.action;
-  const def = f.context && f.context.defense_response;
-  document.getElementById("badgeDef").textContent = def ? "↩ Defense: " + def : "";
-  badge.classList.add("visible");
-  document.querySelectorAll(".tl-step").forEach((el, i) =>
-    el.classList.toggle("active", i === n));
-  renderProbs(f.probs, f.deltas, f.stds);
-  fetchCommentary(f, n);
+function showPlaybackControls() {
+  document.getElementById("playbackBar").style.display = "flex";
+  document.getElementById("timeline").style.display    = "flex";
+  updateControls();
+}
+
+// ── Timeline ───────────────────────────────────────────────────────────────────
+function drawTimelineStrip(frames) {
+  const tl = document.getElementById("timeline");
+  tl.innerHTML = frames.map((f, i) =>
+    (i > 0 ? '<span class="tl-arrow">→</span>' : "") +
+    `<div class="tl-step${i===0?" active":""}" onclick="seek(${i})">
+      <div class="tl-pill">${actionLabel(f.action)}</div>
+    </div>`
+  ).join("");
+}
+
+// ── Metrics ────────────────────────────────────────────────────────────────────
+function renderMetrics(p, d, stds, prevProbs) {
+  if (!p) return;
+  const shotPct  = Math.round(p.p_shot        * 100);
+  const finPct   = Math.round(p.p_final_third * 100);
+  const advPct   = Math.round(p.p_advance     * 100);
+
+  document.getElementById("shotVal").textContent = shotPct + "%";
+  document.getElementById("finVal").textContent  = finPct  + "%";
+  document.getElementById("advVal").textContent  = advPct  + "%";
+  document.getElementById("shotBar").style.width = shotPct + "%";
+  document.getElementById("finBar").style.width  = finPct  + "%";
+  document.getElementById("advBar").style.width  = advPct  + "%";
+
+  if (d) {
+    const sp = Math.round(d.p_shot * 100);
+    const fp = Math.round(d.p_final_third * 100);
+    const ap = Math.round(d.p_advance * 100);
+
+    const shotDEl = document.getElementById("shotDelta");
+    shotDEl.textContent = formatDelta(sp) + " pts";
+    shotDEl.className = "metric-delta-hero " + deltaClass(sp);
+
+    document.getElementById("finDelta").textContent = formatDelta(fp) + " pts";
+    document.getElementById("finDelta").className = "metric-delta-sm " + deltaClass(fp);
+
+    document.getElementById("advDelta").textContent = formatDelta(ap) + " pts";
+    document.getElementById("advDelta").className = "metric-delta-sm " + deltaClass(ap);
+
+    // Sub-line: "was X% before this action · ±N pts"
+    if (prevProbs || (d && p)) {
+      const wasPct = prevProbs ? Math.round(prevProbs.p_shot * 100) : Math.round((p.p_shot - d.p_shot) * 100);
+      const std    = stds?.p_shot;
+      const uncert = std ? ` · ±${Math.round(std * 100)} pts` : "";
+      document.getElementById("shotSub").textContent = `was ${wasPct}% before this action${uncert}`;
+    }
+  } else {
+    ["shotDelta","finDelta","advDelta"].forEach(id => {
+      document.getElementById(id).textContent = "";
+    });
+  }
+}
+
+function formatDelta(pts) { return (pts >= 0 ? "+" : "") + pts; }
+function deltaClass(pts)  { return pts > 0 ? "pos" : pts < 0 ? "neg" : "flat"; }
+
+// ── Clear all ─────────────────────────────────────────────────────────────────
+function clearAll() {
+  S.queue = []; S.frames = []; S.step = -1; stopPlay();
+  _prevPositions = null;
+  redrawAnalystQueue(); updateRunBtn();
+  document.getElementById("playbackBar").style.display = "none";
+  document.getElementById("timeline").style.display    = "none";
+  ["shotVal","finVal","advVal"].forEach(id => document.getElementById(id).textContent = "—");
+  ["shotDelta","finDelta","advDelta","shotSub"].forEach(id => document.getElementById(id).textContent = "");
+  setCommentary("Pick an action to see how the play reshapes.", true);
+  drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
+  updateSeqQueue();
+}
+
+// ── Suggest (Analyst) ─────────────────────────────────────────────────────────
+async function fetchSuggest() {
+  if (!S.teamA || !S.teamB) return;
+  const list = document.getElementById("suggestList");
+  list.innerHTML = '<div style="color:var(--muted);font-size:10px">Loading…</div>';
+  try {
+    const res = await fetch("/api/suggest", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ team_id_a:+S.teamA, team_id_b:+S.teamB, context: currentCtx() }),
+    });
+    const data = await res.json();
+    const maxAbs = Math.max(...data.suggestions.map(r => Math.abs(r.p_shot_delta)), 0.001);
+    list.innerHTML = `
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;font-style:italic">
+        Exploratory — the engine's expectation, not advice.
+      </div>` +
+      data.suggestions.map(r => {
+        const pts = Math.round(r.p_shot_delta * 100);
+        const pos = pts >= 0; const barW = Math.round(Math.abs(r.p_shot_delta)/maxAbs*100);
+        return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0">
+          <span style="flex:1">${r.label}</span>
+          <div style="width:60px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${barW}%;background:${pos?"var(--green)":"var(--red)"};border-radius:2px"></div>
+          </div>
+          <span style="min-width:36px;text-align:right;font-size:10px;color:${pos?"var(--green)":"var(--red)"}">${formatDelta(pts)} pts</span>
+        </div>`;
+      }).join("");
+  } catch(e) { list.innerHTML = `<div style="color:var(--red);font-size:10px">${e.message}</div>`; }
 }
 
 // ── Commentary ────────────────────────────────────────────────────────────────
-const _commentaryCache = {};
-
-function setCommentary(text, muted = false) {
+const _commCache = {};
+function setCommentary(text, muted=false) {
   const el = document.getElementById("commentaryText");
   el.textContent = text;
   el.className = "commentary-text" + (muted ? " muted" : "");
 }
 
-// Extract shirt numbers and spatial context from a frame for commentary.
-// Replicates the same sort logic used in drawPlayers().
-// If S.squadA / S.squadB are populated, also resolves real player names:
-//   rank N (1-based) → squad[N-1].name  (squad is sorted by jersey_number)
 function getPlayerInfo(frame) {
   const { positions, roles, mask } = frame;
   if (!positions || !roles) return {};
-
   const teamA = [], teamB = [];
   for (let i = 0; i < positions.length; i++) {
     if (mask && mask[i]) continue;
     (roles[i][0] > 0.5 ? teamA : teamB).push(i);
   }
-  teamA.sort((a, b) => positions[a][0] - positions[b][0]);
-  teamB.sort((a, b) => positions[b][0] - positions[a][0]);
-
-  const shirtNum = {};
-  teamA.forEach((idx, n) => { shirtNum[idx] = n + 1; });
-  teamB.forEach((idx, n) => { shirtNum[idx] = n + 1; });
-
-  // Helper: rank (1-based) → real player name, or null if squad not loaded
-  const nameA = rank => (S.squadA[rank - 1] || {}).name || null;
-  const nameB = rank => (S.squadB[rank - 1] || {}).name || null;
-
-  // Find actor (ball carrier): roles[i][1] > 0.5
+  teamA.sort((a,b) => positions[a][0] - positions[b][0]);
+  teamB.sort((a,b) => positions[b][0] - positions[a][0]);
+  const sh = {}; teamA.forEach((idx,n) => sh[idx]=n+1); teamB.forEach((idx,n) => sh[idx]=n+1);
+  const nameA = r => (S.squadA[r-1]||{}).name||null;
+  const nameB = r => (S.squadB[r-1]||{}).name||null;
   let actorIdx = null;
-  for (let i = 0; i < roles.length; i++) {
-    if ((!mask || !mask[i]) && roles[i][1] > 0.5) { actorIdx = i; break; }
-  }
-
+  for (let i = 0; i < roles.length; i++) if ((!mask||!mask[i]) && roles[i][1]>0.5) { actorIdx=i; break; }
   if (actorIdx === null) return {};
-
-  const actor_num  = shirtNum[actorIdx] || null;
+  const actor_num = sh[actorIdx]||null;
   const actor_name = actor_num ? nameA(actor_num) : null;
-  const [ax, ay]   = positions[actorIdx];
-
-  // Spatial position description from normalised pitch coords [0,1]
-  const xZone = ax < 0.33 ? "defensive third" : ax < 0.67 ? "midfield" : ax < 0.85 ? "attacking third" : "penalty area";
-  const yFlank = ay < 0.33 ? "left flank" : ay > 0.67 ? "right flank" : "central";
-  const actor_position = `${yFlank}, ${xZone}`;
-
-  // Nearest 2 opponents to the actor (Euclidean distance)
-  const opps = teamB.map(i => ({
-    i,
-    d: Math.hypot(positions[i][0] - ax, positions[i][1] - ay),
-  })).sort((a, b) => a.d - b.d).slice(0, 2);
-  const nearest_defenders = opps.map(o => shirtNum[o.i]).filter(Boolean);
-  const defender_names    = opps.map(o => nameB(shirtNum[o.i])).filter(Boolean);
-
-  // Highest-x teammate (excluding actor) = striker; second-highest = second_runner
-  const teammates    = teamA.filter(i => i !== actorIdx).sort((a, b) => positions[b][0] - positions[a][0]);
-  const striker_num  = teammates[0] != null ? shirtNum[teammates[0]] : null;
-  const striker_name = striker_num ? nameA(striker_num) : null;
-  const second_runner = teammates[1] != null ? shirtNum[teammates[1]] : null;
-
-  return { actor_num, actor_name, actor_position, nearest_defenders, defender_names, striker_num, striker_name, second_runner };
+  const [ax,ay] = positions[actorIdx];
+  const xZone = ax<0.33?"defensive third":ax<0.67?"midfield":ax<0.85?"attacking third":"penalty area";
+  const yFlank = ay<0.33?"left flank":ay>0.67?"right flank":"central";
+  const opps = teamB.map(i=>({i, d:Math.hypot(positions[i][0]-ax,positions[i][1]-ay)})).sort((a,b)=>a.d-b.d).slice(0,2);
+  const nearest_defenders = opps.map(o=>sh[o.i]).filter(Boolean);
+  const defender_names    = opps.map(o=>nameB(sh[o.i])).filter(Boolean);
+  const teammates = teamA.filter(i=>i!==actorIdx).sort((a,b)=>positions[b][0]-positions[a][0]);
+  const striker_num  = teammates[0]!=null?sh[teammates[0]]:null;
+  const striker_name = striker_num?nameA(striker_num):null;
+  const second_runner= teammates[1]!=null?sh[teammates[1]]:null;
+  return {actor_num,actor_name,actor_position:`${yFlank}, ${xZone}`,nearest_defenders,defender_names,striker_num,striker_name,second_runner};
 }
 
 async function fetchCommentary(frame, stepIdx) {
   if (!S.commentaryEnabled) return;
-
-  const ctx   = frame.context || {};
-  const pi    = getPlayerInfo(frame);
-  const key   = `${frame.action}|${(frame.probs.p_shot).toFixed(3)}|${stepIdx}|${ctx.zone}|${pi.actor_name ?? pi.actor_num}`;
-  if (_commentaryCache[key]) { setCommentary(_commentaryCache[key]); return; }
-
-  // Show loading dot while fetching
+  const ctx = frame.context || {};
+  const pi  = getPlayerInfo(frame);
+  const key = `${frame.action}|${(frame.probs.p_shot).toFixed(3)}|${stepIdx}|${ctx.zone}|${pi.actor_name??pi.actor_num}`;
+  if (_commCache[key]) { setCommentary(_commCache[key]); return; }
   const bar = document.getElementById("commentaryBar");
-  const dot = document.createElement("span");
-  dot.className = "commentary-dot";
-  bar.appendChild(dot);
+  const dot = document.createElement("span"); dot.className = "commentary-dot"; bar.appendChild(dot);
   setCommentary("", false);
-
-  const tA = document.getElementById("selA");
-  const tB = document.getElementById("selB");
-  const nameA = tA.options[tA.selectedIndex]?.text || "Team A";
-  const nameB = tB.options[tB.selectedIndex]?.text || "Team B";
-
   try {
     const res = await fetch("/api/commentary", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({
-        action:            frame.action,
-        defense_response:  ctx.defense_response || "",
-        team_name_a:       nameA,
-        team_name_b:       nameB,
-        p_shot:            frame.probs.p_shot,
-        p_shot_delta:      frame.deltas.p_shot,
-        p_advance:         frame.probs.p_advance,
-        p_advance_delta:   frame.deltas.p_advance,
-        minute:            ctx.minute || 45,
-        zone:              ctx.zone   || 1,
-        score_diff:        ctx.score_diff || 0,
-        step_num:          stepIdx + 1,
-        total_steps:       S.frames.length,
-        actor_num:         pi.actor_num         ?? null,
-        actor_name:        pi.actor_name        ?? null,
-        actor_position:    pi.actor_position    ?? "",
-        nearest_defenders: pi.nearest_defenders ?? [],
-        defender_names:    pi.defender_names    ?? [],
-        striker_num:       pi.striker_num       ?? null,
-        striker_name:      pi.striker_name      ?? null,
-        second_runner:     pi.second_runner     ?? null,
+        action: frame.action, defense_response: ctx.defense_response||"",
+        team_name_a: S.teamNameA, team_name_b: S.teamNameB,
+        p_shot: frame.probs.p_shot, p_shot_delta: frame.deltas?.p_shot||0,
+        p_advance: frame.probs.p_advance, p_advance_delta: frame.deltas?.p_advance||0,
+        minute: ctx.minute||45, zone: ctx.zone||1, score_diff: ctx.score_diff||0,
+        step_num: stepIdx+1, total_steps: S.frames.length,
+        actor_num: pi.actor_num??null, actor_name: pi.actor_name??null,
+        actor_position: pi.actor_position??"",
+        nearest_defenders: pi.nearest_defenders??[], defender_names: pi.defender_names??[],
+        striker_num: pi.striker_num??null, striker_name: pi.striker_name??null,
+        second_runner: pi.second_runner??null,
       }),
     });
     const data = await res.json();
     dot.remove();
     if (data.available && data.commentary) {
-      _commentaryCache[key] = data.commentary;
+      _commCache[key] = data.commentary;
       setCommentary(data.commentary);
     } else {
       S.commentaryEnabled = false;
-      setCommentary("Set ANTHROPIC_API_KEY to enable live commentary.", true);
+      setCommentary("Set ANTHROPIC_API_KEY in .env to enable live commentary.", true);
     }
-  } catch(e) {
-    dot.remove();
-    setCommentary("", true);
-  }
+  } catch { dot.remove(); setCommentary("", true); }
 }
 
-// ── Probability bars ──────────────────────────────────────────────────────────
-function renderProbs(p, d, stds) {
-  if (!p) return;
-  setProb("pAdv",  p.p_advance,     d && d.p_advance,     stds && stds.p_advance);
-  setProb("pShot", p.p_shot,        d && d.p_shot,        stds && stds.p_shot);
-  setProb("pFin",  p.p_final_third, d && d.p_final_third, stds && stds.p_final_third);
-}
-function setProb(id, val, delta, std) {
-  const row  = document.getElementById(id);
-  const pct  = row.querySelector(".prob-pct");
-  const dEl  = row.querySelector(".prob-delta");
-  const fill = row.querySelector(".prob-fill");
-
-  // Remove any previous std badge
-  row.querySelectorAll(".prob-std").forEach(el => el.remove());
-
-  pct.textContent  = val != null ? Math.round(val * 100) + "%" : "—";
-  fill.style.width = val != null ? Math.round(val * 100) + "%" : "0%";
-
-  if (std != null && std > 0.001) {
-    const badge = document.createElement("span");
-    badge.className = "prob-std";
-    badge.textContent = `±${Math.round(std * 100)}pp`;
-    badge.title = "1-sigma uncertainty across stochastic samples";
-    pct.after(badge);
-  }
-
-  if (delta != null) {
-    const s = delta >= 0 ? "+" : "";
-    dEl.textContent = s + Math.round(delta * 100) + "%";
-    dEl.className   = "prob-delta" + (delta > 0.005 ? " pos" : delta < -0.005 ? " neg" : "");
-  } else { dEl.textContent = ""; dEl.className = "prob-delta"; }
-}
-function clearProbs() { ["pAdv","pShot","pFin"].forEach(id => setProb(id, null, null, null)); }
-
-// ── Timeline ──────────────────────────────────────────────────────────────────
-function drawTimeline(frames) {
-  const tl = document.getElementById("timeline");
-  if (!frames.length) {
-    tl.innerHTML = '<span class="tl-empty">Run a sequence to see the playback timeline</span>';
-    return;
-  }
-  let html = "";
-  frames.forEach((f, i) => {
-    if (i > 0) html += '<span class="tl-arrow">→</span>';
-    const def = f.context && f.context.defense_response || "";
-    html += `<div class="tl-step${i===0?" active":""}" onclick="seek(${i})">
-      <div class="tl-pill">${f.action}</div>
-      ${def ? `<div class="tl-def">↩ ${def}</div>` : ""}
-    </div>`;
-  });
-  tl.innerHTML = html;
-}
-
-// ── Canvas / Pitch ────────────────────────────────────────────────────────────
+// ── Canvas setup ───────────────────────────────────────────────────────────────
 let CW = 800, CH = 520;
 function resizeCanvas() {
-  const wrap   = document.getElementById("pitchWrap");
+  const wrap = document.getElementById("pitchWrap");
   const canvas = document.getElementById("pitch");
-  const ratio  = 105 / 68;
-  const mw = wrap.clientWidth  - 20;
-  const mh = wrap.clientHeight - 20;
-  if (mw / ratio <= mh) { CW = mw; CH = Math.round(mw / ratio); }
-  else                  { CH = mh; CW = Math.round(mh * ratio); }
+  const ratio  = 105/68;
+  const mw = wrap.clientWidth - 20, mh = wrap.clientHeight - 20;
+  if (mw/ratio <= mh) { CW=mw; CH=Math.round(mw/ratio); }
+  else                { CH=mh; CW=Math.round(mh*ratio); }
   canvas.width = CW; canvas.height = CH;
 }
 const px = x => x * CW;
 const py = y => y * CH;
 
-function drawEmpty() {
-  drawPitch();
-  const ctx = document.getElementById("pitch").getContext("2d");
-  ctx.fillStyle    = "rgba(255,255,255,0.18)";
-  ctx.font         = Math.round(CH * 0.032) + "px sans-serif";
-  ctx.textAlign    = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("Build a sequence and click Run to simulate", px(0.5), py(0.5));
-  ctx.textBaseline = "alphabetic";
-}
-
-function drawPitch() {
-  const canvas = document.getElementById("pitch");
-  const ctx    = canvas.getContext("2d");
-  ctx.clearRect(0, 0, CW, CH);
-
-  // Pitch background
-  ctx.fillStyle = "#1a4731";
-  ctx.fillRect(0, 0, CW, CH);
-
+// ── Pitch drawing ──────────────────────────────────────────────────────────────
+function drawPitchSurface(ctx) {
+  ctx.clearRect(0,0,CW,CH);
+  ctx.fillStyle = "#1a4731"; ctx.fillRect(0,0,CW,CH);
   // Alternating stripes
-  for (let i = 0; i < 10; i++) {
-    if (i % 2 === 0) {
-      ctx.fillStyle = "rgba(0,0,0,0.06)";
-      ctx.fillRect(px(i/10), 0, px(0.1), CH);
-    }
+  for (let i=0; i<10; i++) if (i%2===0) {
+    ctx.fillStyle = "rgba(0,0,0,0.05)";
+    ctx.fillRect(px(i/10),0,px(0.1),CH);
   }
-
   const P = 0.04;
-  ctx.strokeStyle = "rgba(255,255,255,0.7)";
-  ctx.lineWidth   = 1.5;
-
-  // Boundary
-  ctx.strokeRect(px(P), py(P), px(1-2*P), py(1-2*P));
-
-  // Halfway line + centre circle
-  ctx.beginPath();
-  ctx.moveTo(px(0.5), py(P));
-  ctx.lineTo(px(0.5), py(1-P));
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(px(0.5), py(0.5), px(0.087), 0, 2*Math.PI);
-  ctx.stroke();
-
-  // Penalty areas
-  const [paW, paH, paT] = [0.157, 0.593, (1-0.593)/2];
-  ctx.strokeRect(px(P),       py(paT), px(paW), py(paH));
-  ctx.strokeRect(px(1-P-paW), py(paT), px(paW), py(paH));
-
-  // 6-yard boxes
-  const [sbW, sbH, sbT] = [0.057, 0.264, (1-0.264)/2];
-  ctx.strokeRect(px(P),       py(sbT), px(sbW), py(sbH));
-  ctx.strokeRect(px(1-P-sbW), py(sbT), px(sbW), py(sbH));
-
-  // Goals
-  const [gW, gH, gT] = [0.014, 0.112, (1-0.112)/2];
-  ctx.strokeRect(px(P-gW), py(gT), px(gW), py(gH));
-  ctx.strokeRect(px(1-P),  py(gT), px(gW), py(gH));
-
-  // Zone dividers (dashed)
-  ctx.strokeStyle = "rgba(255,255,255,0.14)";
-  ctx.setLineDash([5, 5]);
-  ctx.lineWidth = 1;
-  [1/3, 2/3].forEach(x => {
-    ctx.beginPath();
-    ctx.moveTo(px(x), py(P));
-    ctx.lineTo(px(x), py(1-P));
-    ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,0.65)"; ctx.lineWidth = 1.5;
+  ctx.strokeRect(px(P),py(P),px(1-2*P),py(1-2*P));
+  ctx.beginPath(); ctx.moveTo(px(0.5),py(P)); ctx.lineTo(px(0.5),py(1-P)); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px(0.5),py(0.5),px(0.087),0,2*Math.PI); ctx.stroke();
+  const [paW,paH,paT] = [0.157,0.593,(1-0.593)/2];
+  ctx.strokeRect(px(P),py(paT),px(paW),py(paH));
+  ctx.strokeRect(px(1-P-paW),py(paT),px(paW),py(paH));
+  const [sbW,sbH,sbT] = [0.057,0.264,(1-0.264)/2];
+  ctx.strokeRect(px(P),py(sbT),px(sbW),py(sbH));
+  ctx.strokeRect(px(1-P-sbW),py(sbT),px(sbW),py(sbH));
+  const [gW,gH,gT] = [0.014,0.112,(1-0.112)/2];
+  ctx.strokeRect(px(P-gW),py(gT),px(gW),py(gH));
+  ctx.strokeRect(px(1-P),py(gT),px(gW),py(gH));
+  // Zone bands (faint)
+  ctx.strokeStyle = "rgba(255,255,255,0.10)"; ctx.setLineDash([4,5]); ctx.lineWidth=1;
+  [1/3,2/3].forEach(x => {
+    ctx.beginPath(); ctx.moveTo(px(x),py(P)); ctx.lineTo(px(x),py(1-P)); ctx.stroke();
   });
   ctx.setLineDash([]);
-
-  // Zone labels
-  ctx.fillStyle    = "rgba(255,255,255,0.11)";
-  ctx.font         = Math.round(CH * 0.026) + "px sans-serif";
-  ctx.textAlign    = "center";
-  ctx.textBaseline = "top";
-  ctx.fillText("Zone 0", px(1/6), py(P + 0.01));
-  ctx.fillText("Zone 1", px(3/6), py(P + 0.01));
-  ctx.fillText("Zone 2", px(5/6), py(P + 0.01));
+  // Zone labels (plain language)
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.font = Math.round(CH*0.024)+"px "+getComputedStyle(document.documentElement).getPropertyValue('--font').trim();
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("Defensive third",  px(1/6), py(P+0.01));
+  ctx.fillText("Middle third",     px(3/6), py(P+0.01));
+  ctx.fillText("Attacking third",  px(5/6), py(P+0.01));
   ctx.textBaseline = "alphabetic";
 }
 
-function drawPlayers(positions, roles, mask) {
-  const ctx = document.getElementById("pitch").getContext("2d");
-  const R   = Math.max(8, Math.round(CW * 0.012));
-
-  // Assign shirt numbers by spatial position within each team.
-  // Team A (attacking left→right): sort by x ascending → GK=1, FWD=11.
-  // Team B (defending right→left): sort by x descending → GK=1, FWD=11.
-  const teamA = [], teamB = [];
-  for (let i = 0; i < positions.length; i++) {
-    if (mask[i]) continue;
-    (roles[i][0] > 0.5 ? teamA : teamB).push(i);
+function drawThreatOverlay(ctx, positions, roles, mask, pShot) {
+  if (!pShot || pShot < 0.005) return;
+  // Find forward attacking players
+  const fwd = [];
+  for (let i=0; i<positions.length; i++) {
+    if (mask && mask[i]) continue;
+    if (roles[i][0] > 0.5 && positions[i][0] > 0.55) fwd.push(positions[i]);
   }
-  teamA.sort((a, b) => positions[a][0] - positions[b][0]);
-  teamB.sort((a, b) => positions[b][0] - positions[a][0]);
-  const labels = {};
-  teamA.forEach((idx, n) => { labels[idx] = n + 1; });
-  teamB.forEach((idx, n) => { labels[idx] = n + 1; });
+  if (!fwd.length) return;
+  const cx = fwd.reduce((s,p)=>s+p[0],0)/fwd.length;
+  const cy = fwd.reduce((s,p)=>s+p[1],0)/fwd.length;
+  const r  = Math.max(CW*0.08, pShot * CW * 0.6);
+  const alpha = Math.min(0.18 + pShot * 0.5, 0.5);
+  const grd = ctx.createRadialGradient(px(cx),py(cy),0,px(cx),py(cy),r);
+  grd.addColorStop(0, `rgba(240,131,42,${alpha})`);
+  grd.addColorStop(1, "rgba(240,131,42,0)");
+  ctx.fillStyle = grd; ctx.fillRect(0,0,CW,CH);
+}
 
-  // Draw circles first, then labels on top
-  for (let i = 0; i < positions.length; i++) {
-    if (mask[i]) continue;
-    const x       = px(positions[i][0]);
-    const y       = py(positions[i][1]);
-    const isMate  = roles[i][0] > 0.5;
-    const isActor = roles[i][1] > 0.5;
-    const color   = isActor ? "#f0c040" : isMate ? "#58a6ff" : "#f85149";
-    const r       = isActor ? R + 2 : R;
+function drawPlayers(ctx, positions, roles, mask, probs) {
+  const R = Math.max(9, Math.round(CW*0.013));
+  const ACTOR_R = Math.round(R * 1.25);
+  const teamA=[],teamB=[];
+  for (let i=0; i<positions.length; i++) {
+    if (mask && mask[i]) continue;
+    (roles[i][0]>0.5?teamA:teamB).push(i);
+  }
+  teamA.sort((a,b)=>positions[a][0]-positions[b][0]);
+  teamB.sort((a,b)=>positions[b][0]-positions[a][0]);
+  const labels={}; teamA.forEach((idx,n)=>labels[idx]=n+1); teamB.forEach((idx,n)=>labels[idx]=n+1);
 
-    ctx.shadowColor = "rgba(0,0,0,0.55)";
-    ctx.shadowBlur  = 5;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, 2*Math.PI);
+  // Name lookup
+  const nameA = rank => (S.squadA[rank-1]||{}).name||null;
+  const nameB = rank => (S.squadB[rank-1]||{}).name||null;
+
+  for (let i=0; i<positions.length; i++) {
+    if (mask && mask[i]) continue;
+    const x=px(positions[i][0]), y=py(positions[i][1]);
+    const isMate=roles[i][0]>0.5, isActor=roles[i][1]>0.5;
+    const r = isActor ? ACTOR_R : R;
+    const color = isActor ? "#f0c040" : isMate ? "#58a6ff" : "#f85149";
+
+    // Shadow
+    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.arc(x,y,r,0,2*Math.PI);
     ctx.fillStyle = color; ctx.fill();
     ctx.shadowBlur = 0;
 
-    ctx.strokeStyle = "rgba(255,255,255,0.4)";
-    ctx.lineWidth = 1;
+    // Border
+    ctx.strokeStyle = isActor ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.35)";
+    ctx.lineWidth = isActor ? 2 : 1;
     ctx.stroke();
 
+    // Outer ring for ball carrier
     if (isActor) {
-      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, 2*Math.PI);
-      ctx.strokeStyle = "rgba(240,192,64,0.5)";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(x,y,r+5,0,2*Math.PI);
+      ctx.strokeStyle = "rgba(240,192,64,0.55)"; ctx.lineWidth=1.5; ctx.stroke();
+      // Ball (small circle)
+      const bx = x + r*0.9, by = y - r*0.9;
+      ctx.beginPath(); ctx.arc(bx,by,3,0,2*Math.PI);
+      ctx.fillStyle="#fff"; ctx.fill();
     }
 
-    // Shirt number inside circle
-    const num      = labels[i];
-    const fontSize = Math.max(7, Math.round(r * 0.9));
-    ctx.font         = `bold ${fontSize}px monospace`;
-    ctx.textAlign    = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle    = isActor ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.9)";
-    ctx.fillText(num, x, y);
+    // Shirt number
+    const num=labels[i];
+    const fs=Math.max(7,Math.round(r*0.85));
+    ctx.font=`bold ${fs}px monospace`; ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillStyle = isActor?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.9)";
+    ctx.fillText(num,x,y);
+
+    // Name label for ball carrier
+    if (isActor && num) {
+      const playerName = isMate ? nameA(num) : nameB(num);
+      const labelText  = playerName ? playerName.split(" ").pop() : `#${num}`;
+      const lw = ctx.measureText(labelText).width + 10;
+      const lx = x - lw/2, ly = y - r - 16;
+      ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.beginPath();
+      roundRect(ctx,lx,ly,lw,14,3); ctx.fill();
+      ctx.font=`500 ${Math.max(9,Math.round(r*0.75))}px ${getComputedStyle(document.documentElement).getPropertyValue('--font')}`;
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillStyle="#fff"; ctx.fillText(labelText, x, ly+7);
+    }
   }
-  ctx.textBaseline = "alphabetic";
+  ctx.textBaseline="alphabetic";
+}
+
+function roundRect(ctx,x,y,w,h,r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+
+function drawFormation(positions, roles, mask, probs) {
+  const canvas=document.getElementById("pitch");
+  const ctx=canvas.getContext("2d");
+  drawPitchSurface(ctx);
+  if (probs) drawThreatOverlay(ctx,positions,roles,mask,probs.p_shot);
+  drawPlayers(ctx,positions,roles,mask,probs);
+}
+
+// ── Animated frame transition ─────────────────────────────────────────────────
+const ANIM_DURATION = 600;
+function animateToFrame(frame) {
+  const from = _prevPositions || DEF_POSITIONS;
+  const to   = frame.positions;
+  if (!from || from.length !== to.length) {
+    drawFormation(to, frame.roles, frame.mask, frame.probs);
+    _prevPositions = to; return;
+  }
+  if (_animId) cancelAnimationFrame(_animId);
+  const startTime = performance.now();
+  const canvas=document.getElementById("pitch");
+  const ctx=canvas.getContext("2d");
+
+  function step(now) {
+    const t = Math.min((now-startTime)/ANIM_DURATION, 1);
+    const ease = t<0.5 ? 2*t*t : -1+(4-2*t)*t;
+    const interp = to.map((pos,i) => [
+      from[i][0] + (pos[0]-from[i][0])*ease,
+      from[i][1] + (pos[1]-from[i][1])*ease,
+    ]);
+    drawPitchSurface(ctx);
+    if (frame.probs) drawThreatOverlay(ctx,interp,frame.roles,frame.mask,frame.probs.p_shot*ease);
+    drawPlayers(ctx,interp,frame.roles,frame.mask,frame.probs);
+    if (t<1) _animId=requestAnimationFrame(step);
+    else { _prevPositions=to; _animId=null; }
+  }
+  // Check prefers-reduced-motion
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    drawFormation(to, frame.roles, frame.mask, frame.probs);
+    _prevPositions = to;
+  } else {
+    _animId = requestAnimationFrame(step);
+  }
+}
+
+function renderFrame(n) {
+  const f = S.frames[n]; if (!f) return;
+  drawFormation(f.positions, f.roles, f.mask, f.probs);
+  renderMetrics(f.probs, f.deltas, f.stds);
+  fetchCommentary(f, n);
+  updateControls();
+}
+
+// ── Loader ─────────────────────────────────────────────────────────────────────
+function showLoader(on) {
+  document.getElementById("loader").classList.toggle("visible", on);
+}
+
+// ── Share URL ──────────────────────────────────────────────────────────────────
+function shareURL() {
+  const seq = (S.mode==="explainer" ? S.frames.map(f=>f.action+":.1") : S.queue.map(q=>`${q.action}:${q.alpha}`)).join(",");
+  if (!seq) return;
+  const url = `${location.origin}${location.pathname}?seq=${encodeURIComponent(seq)}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = event.currentTarget; const orig=btn.innerHTML;
+    btn.innerHTML="✓"; setTimeout(()=>btn.innerHTML=orig,1500);
+  });
+}
+function parseURLSequence() {
+  const seq = new URLSearchParams(location.search).get("seq");
+  if (!seq) return;
+  for (const part of seq.split(",")) {
+    const [name,alpha] = part.split(":");
+    if (ACTIONS.find(a=>a.name===name) && S.queue.length<12)
+      S.queue.push({action:name, alpha:parseFloat(alpha)||1.0});
+  }
+  if (S.queue.length) { redrawAnalystQueue(); updateRunBtn(); }
+}
+
+// ── Onboarding ─────────────────────────────────────────────────────────────────
+const COACH_STEPS = [
+  { text: "This is the play right now — the blue team is in possession in the middle third.", anchor: "pitchWrap", pos: "right" },
+  { text: "Tap an action to see how the play reshapes. One tap, instant result.", anchor: "action-xl-grid", pos: "right" },
+  { text: "This number changes with each action — it's the engine's expected chance of a shot.", anchor: "metricShot", pos: "above" },
+];
+let _coachIdx = 0;
+function checkOnboarding() {
+  if (localStorage.getItem("twm_onboarded")) return;
+  // Only show in Explainer mode
+  if (S.mode !== "explainer") return;
+  _coachIdx = 0;
+  showCoach(0);
+}
+function showCoach(i) {
+  const step = COACH_STEPS[i];
+  const overlay = document.getElementById("onboardingOverlay");
+  const mark    = document.getElementById("coachmark");
+  overlay.classList.add("visible");
+  document.getElementById("coachStep").textContent = `${i+1} of ${COACH_STEPS.length}`;
+  document.getElementById("coachText").textContent = step.text;
+  document.getElementById("coachmark").querySelector(".coachmark-next").textContent =
+    i < COACH_STEPS.length-1 ? "Next →" : "Got it";
+
+  // Position coachmark near anchor
+  const anchor = document.querySelector("."+step.anchor) || document.getElementById(step.anchor);
+  if (anchor) {
+    const r = anchor.getBoundingClientRect();
+    mark.style.top  = Math.min(r.bottom + 10, window.innerHeight - 140) + "px";
+    mark.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
+  }
+}
+function nextCoach() {
+  _coachIdx++;
+  if (_coachIdx >= COACH_STEPS.length) dismissOnboarding();
+  else showCoach(_coachIdx);
+}
+function dismissOnboarding() {
+  document.getElementById("onboardingOverlay").classList.remove("visible");
+  localStorage.setItem("twm_onboarded","1");
 }
 </script>
 </body>
