@@ -562,25 +562,28 @@ class ConditionalEngine:
                           context: "MatchContext") -> torch.Tensor:
         """
         Apply per-(zone, phase) x-position correction to teammate positions,
-        then pin both goalkeepers to their respective goal ends.
+        then pin goalkeepers and clamp outfield players to formation bands.
 
         gen_xy : (1, N, 2) generated positions (normalised [0,1])
         Returns the same shape with teammate x shifted by Δx, clamped to [0,1].
         The phase encoding matches the debias fit: 0=open/counter, 2=set_piece.
         """
         if not self._debias:
-            return self._pin_goalkeepers(gen_xy)
+            return self._clamp_outfield_positions(
+                self._pin_goalkeepers(gen_xy), context)
         # Map engine phase to debias phase key: 0=open_play, 1=counter, 2=set_piece+
         phase_key = 2 if context.phase >= 2 else context.phase
         dx = self._debias.get((min(context.zone, 3), phase_key), 0.0)
         if abs(dx) < 1e-6:
-            return self._pin_goalkeepers(gen_xy)
+            return self._clamp_outfield_positions(
+                self._pin_goalkeepers(gen_xy), context)
         # Teammate mask from roles: (1, N, 2) → is_teammate = roles[:, :, 0] > 0.5
         teammate = (self.roles[:, :, 0] > 0.5).unsqueeze(-1)  # (1, N, 1)
         x_shift  = torch.zeros_like(gen_xy)
         x_shift[:, :, 0] = dx   # shift only x-channel
         corrected = gen_xy + teammate.float() * x_shift
-        return self._pin_goalkeepers(corrected.clamp(0.0, 1.0))
+        return self._clamp_outfield_positions(
+            self._pin_goalkeepers(corrected.clamp(0.0, 1.0)), context)
 
     def _pin_goalkeepers(self, xy: torch.Tensor) -> torch.Tensor:
         """
@@ -608,6 +611,76 @@ class ConditionalEngine:
         gk_b = 11 + int(xy[0, 11:22, 0].argmax().item())
         xy[0, gk_b, 0] = xy[0, gk_b, 0].clamp(0.87, 0.98)
         xy[0, gk_b, 1] = xy[0, gk_b, 1].clamp(0.35, 0.65)
+
+        return xy
+
+    def _clamp_outfield_positions(self, xy: torch.Tensor,
+                                   context: "MatchContext") -> torch.Tensor:
+        """
+        Clamp outfield players to formation-appropriate x-bands.
+
+        After sorting each team by x, players are assigned to depth tiers:
+          rank 0        → GK (already pinned by _pin_goalkeepers)
+          ranks 1–4     → DEF
+          ranks 5–7     → MID
+          ranks 8–10    → FWD
+
+        This matches a 4-3-3 exactly; for other formations the tier boundaries
+        are a reasonable approximation (e.g. a 4-4-2 4th mid ends up in the FWD
+        tier, which correctly places them further forward than a deep mid).
+
+        Bands widen as zone increases (team pushes up) and shift with urgency
+        (losing late → whole team presses higher; winning late → defends deeper).
+        Team B ranges are the mirror image (1 − x).
+        """
+        if xy.shape[1] < 11:
+            return xy
+
+        zone = min(context.zone, 3)
+
+        # Per-tier x-ranges for Team A (attacking left → right), indexed by zone.
+        # Format: (x_min, x_max)
+        TIERS_A = {
+            #         zone 0          zone 1          zone 2          zone 3
+            "def": [(0.09, 0.42), (0.11, 0.50), (0.16, 0.58), (0.20, 0.63)],
+            "mid": [(0.20, 0.55), (0.26, 0.63), (0.32, 0.72), (0.37, 0.77)],
+            "fwd": [(0.30, 0.68), (0.38, 0.76), (0.48, 0.87), (0.53, 0.91)],
+        }
+        TIER_RANKS = [("def", 1, 5), ("mid", 5, 8), ("fwd", 8, 11)]
+
+        # Urgency shifts the whole outfield up (losing late) or down (winning late).
+        urgency = 0.0
+        if context.score_diff < -0.5 and context.minute > 72:
+            urgency = min(0.06 * (-context.score_diff), 0.10)
+        elif context.score_diff > 0.5 and context.minute > 78:
+            urgency = -min(0.05 * context.score_diff, 0.08)
+
+        xy = xy.clone()
+
+        def _apply(sorted_idx: list, flip: bool) -> None:
+            for tier, r0, r1 in TIER_RANKS:
+                lo, hi = TIERS_A[tier][zone]
+                lo = float(lo) + urgency
+                hi = float(hi) + urgency
+                if flip:                     # mirror for Team B
+                    lo, hi = 1.0 - hi, 1.0 - lo
+                lo = max(0.02, lo)
+                hi = min(0.98, max(lo + 0.05, hi))
+                for rank in range(r0, min(r1, len(sorted_idx))):
+                    idx = sorted_idx[rank]
+                    xy[0, idx, 0] = xy[0, idx, 0].clamp(lo, hi)
+
+        # Team A: indices 0–10, sort ascending by x (rank 0 = GK = lowest x)
+        n_A = min(11, xy.shape[1])
+        sorted_a = xy[0, :n_A, 0].argsort().tolist()
+        _apply(sorted_a, flip=False)
+
+        # Team B: indices 11–21, sort descending by x (rank 0 = GK = highest x)
+        n_B = min(11, xy.shape[1] - 11)
+        if n_B > 0:
+            rel = xy[0, 11:11+n_B, 0].argsort(descending=True).tolist()
+            sorted_b = [11 + r for r in rel]
+            _apply(sorted_b, flip=True)
 
         return xy
 
