@@ -27,7 +27,7 @@ ConditionalEngine  →  FastAPI server  →  browser UI
 | Check 3 — Generator realism (with clamps) | classifier AUC | 0.845 |
 | Check 4 — Action effect-ordering | sign-agreement | 47% (FAIL) |
 
-Check 4 failing means the simulation's value is **communicative, not analytical** — the engine makes team style visible and interactive, but does not reliably rank which actions improve outcomes. Do not use it for decision-making.
+Check 4 failing means the engine does not reliably rank which actions improve outcomes — it should not be the basis for tactical decisions. For the primary use case (visualizing designed tactics, communicating how a shape evolves spatially, expressing team style interactively) Check 4 is not the relevant bar: football is too stochastic and continuous for any single model to be outcome-determinative, and analysts bring their own domain knowledge to the decision layer.
 
 ## Data
 
