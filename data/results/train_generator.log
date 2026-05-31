@@ -1,0 +1,167 @@
+ERROR:root:code for hash blake2b was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2b
+ERROR:root:code for hash blake2s was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2s
+/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Tactical World Model — Generator Training
+Device: mps
+
+Loading dataset: data/results/spatial_dataset.pt
+  Samples: 70,817
+  Position tensor: torch.Size([70817, 23, 4])
+
+=======================================================
+PHASE 1 — Training SSE (TacticalPredictor)
+=======================================================
+Parameters: 663,306
+Device: mps
+Train samples: 63,878  |  Val samples: 6,939
+  Epoch   1/60  train=0.7247  val=0.6926  s2=0.765  s3=0.803  shot=0.723
+  Epoch  10/60  train=0.6618  val=0.6623  s2=0.777  s3=0.851  shot=0.675
+  Epoch  20/60  train=0.6482  val=0.6526  s2=0.784  s3=0.863  shot=0.752
+  Epoch  30/60  train=0.6390  val=0.6377  s2=0.789  s3=0.867  shot=0.765
+  Epoch  40/60  train=0.6301  val=0.6389  s2=0.788  s3=0.868  shot=0.753
+  Epoch  50/60  train=0.6228  val=0.6323  s2=0.793  s3=0.869  shot=0.732
+  Epoch  60/60  train=0.6197  val=0.6331  s2=0.793  s3=0.868  shot=0.726
+
+Best SSE — s2=0.7950  s3=0.8693  shot=0.7363
+
+=======================================================
+PHASE 2 — Computing Team Fingerprints
+=======================================================
+  Encoding possessions:   0%|          | 0/139 [00:00<?, ?it/s]  Encoding possessions:   9%|▊         | 12/139 [00:00<00:01, 117.25it/s]  Encoding possessions:  18%|█▊        | 25/139 [00:00<00:00, 121.41it/s]  Encoding possessions:  27%|██▋       | 38/139 [00:00<00:00, 121.40it/s]  Encoding possessions:  37%|███▋      | 51/139 [00:00<00:00, 102.09it/s]  Encoding possessions:  46%|████▌     | 64/139 [00:00<00:00, 108.43it/s]  Encoding possessions:  55%|█████▌    | 77/139 [00:00<00:00, 112.76it/s]  Encoding possessions:  65%|██████▍   | 90/139 [00:00<00:00, 115.27it/s]  Encoding possessions:  74%|███████▍  | 103/139 [00:00<00:00, 117.66it/s]  Encoding possessions:  83%|████████▎ | 115/139 [00:00<00:00, 118.25it/s]  Encoding possessions:  91%|█████████▏| 127/139 [00:01<00:00, 102.02it/s]  Encoding possessions: 100%|██████████| 139/139 [00:01<00:00, 97.85it/s]   Encoding possessions: 100%|██████████| 139/139 [00:01<00:00, 107.83it/s]
+/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+  Team fingerprints computed: 39 teams
+  Saved: model/checkpoints/team_fingerprints.pt
+  Fingerprint stats — mean norm: 12.490  std: 0.043
+
+=======================================================
+PHASE 3 — Training Flow Matching Generator
+=======================================================
+Parameters: 4,187,778
+  Epoch   1/100  train=0.0702  val=0.0485  MMD=0.16496
+  Epoch   2/100  train=0.0481  val=0.0469
+  Epoch   3/100  train=0.0468  val=0.0456
+  Epoch   4/100  train=0.0467  val=0.0449
+  Epoch   5/100  train=0.0464  val=0.0456
+  Epoch   6/100  train=0.0463  val=0.0459
+  Epoch   7/100  train=0.0460  val=0.0447
+  Epoch   8/100  train=0.0460  val=0.0455
+  Epoch   9/100  train=0.0459  val=0.0455
+  Epoch  10/100  train=0.0458  val=0.0457  MMD=0.15102
+  Epoch  11/100  train=0.0455  val=0.0457
+  Epoch  12/100  train=0.0456  val=0.0457
+  Epoch  13/100  train=0.0454  val=0.0458
+  Epoch  14/100  train=0.0454  val=0.0451
+  Epoch  15/100  train=0.0457  val=0.0451
+  Epoch  16/100  train=0.0454  val=0.0451
+  Epoch  17/100  train=0.0452  val=0.0448
+  Epoch  18/100  train=0.0451  val=0.0454
+  Epoch  19/100  train=0.0452  val=0.0442
+  Epoch  20/100  train=0.0451  val=0.0446  MMD=0.16163
+  Epoch  21/100  train=0.0450  val=0.0444
+  Epoch  22/100  train=0.0450  val=0.0454
+  Epoch  23/100  train=0.0450  val=0.0449
+  Epoch  24/100  train=0.0449  val=0.0449
+  Epoch  25/100  train=0.0446  val=0.0441
+  Epoch  26/100  train=0.0448  val=0.0445
+  Epoch  27/100  train=0.0447  val=0.0449
+  Epoch  28/100  train=0.0447  val=0.0446
+  Epoch  29/100  train=0.0446  val=0.0441
+  Epoch  30/100  train=0.0446  val=0.0445  MMD=0.14550
+  Epoch  31/100  train=0.0444  val=0.0440
+  Epoch  32/100  train=0.0444  val=0.0450
+  Epoch  33/100  train=0.0445  val=0.0440
+  Epoch  34/100  train=0.0444  val=0.0442
+  Epoch  35/100  train=0.0445  val=0.0443
+  Epoch  36/100  train=0.0443  val=0.0444
+  Epoch  37/100  train=0.0445  val=0.0449
+  Epoch  38/100  train=0.0444  val=0.0434
+  Epoch  39/100  train=0.0443  val=0.0440
+  Epoch  40/100  train=0.0443  val=0.0436  MMD=0.14380
+  Epoch  41/100  train=0.0440  val=0.0435
+  Epoch  42/100  train=0.0442  val=0.0434
+  Epoch  43/100  train=0.0442  val=0.0436
+  Epoch  44/100  train=0.0442  val=0.0438
+  Epoch  45/100  train=0.0442  val=0.0436
+  Epoch  46/100  train=0.0441  val=0.0434
+  Epoch  47/100  train=0.0439  val=0.0438
+  Epoch  48/100  train=0.0439  val=0.0437
+  Epoch  49/100  train=0.0439  val=0.0435
+  Epoch  50/100  train=0.0439  val=0.0437  MMD=0.15988
+  Epoch  51/100  train=0.0441  val=0.0443
+  Epoch  52/100  train=0.0438  val=0.0439
+  Epoch  53/100  train=0.0437  val=0.0442
+  Epoch  54/100  train=0.0438  val=0.0442
+  Epoch  55/100  train=0.0438  val=0.0434
+  Epoch  56/100  train=0.0438  val=0.0430
+  Epoch  57/100  train=0.0438  val=0.0434
+  Epoch  58/100  train=0.0437  val=0.0436
+  Epoch  59/100  train=0.0437  val=0.0437
+  Epoch  60/100  train=0.0436  val=0.0438  MMD=0.14999
+  Epoch  61/100  train=0.0437  val=0.0434
+  Epoch  62/100  train=0.0436  val=0.0437
+  Epoch  63/100  train=0.0437  val=0.0440
+  Epoch  64/100  train=0.0437  val=0.0429
+  Epoch  65/100  train=0.0437  val=0.0432
+  Epoch  66/100  train=0.0435  val=0.0433
+  Epoch  67/100  train=0.0436  val=0.0429
+  Epoch  68/100  train=0.0434  val=0.0431
+  Epoch  69/100  train=0.0435  val=0.0432
+  Epoch  70/100  train=0.0435  val=0.0424  MMD=0.14981
+  Epoch  71/100  train=0.0432  val=0.0433
+  Epoch  72/100  train=0.0433  val=0.0435
+  Epoch  73/100  train=0.0434  val=0.0427
+  Epoch  74/100  train=0.0434  val=0.0433
+  Epoch  75/100  train=0.0433  val=0.0430
+  Epoch  76/100  train=0.0432  val=0.0428
+  Epoch  77/100  train=0.0433  val=0.0430
+  Epoch  78/100  train=0.0435  val=0.0433
+  Epoch  79/100  train=0.0433  val=0.0431
+  Epoch  80/100  train=0.0432  val=0.0422  MMD=0.15321
+  Epoch  81/100  train=0.0431  val=0.0431
+  Epoch  82/100  train=0.0431  val=0.0436
+  Epoch  83/100  train=0.0432  val=0.0434
+  Epoch  84/100  train=0.0431  val=0.0423
+  Epoch  85/100  train=0.0429  val=0.0430
+  Epoch  86/100  train=0.0432  val=0.0423
+  Epoch  87/100  train=0.0431  val=0.0427
+  Epoch  88/100  train=0.0431  val=0.0422
+  Epoch  89/100  train=0.0430  val=0.0428
+  Epoch  90/100  train=0.0431  val=0.0423  MMD=0.15470
+  Epoch  91/100  train=0.0430  val=0.0432
+  Epoch  92/100  train=0.0430  val=0.0428
+  Epoch  93/100  train=0.0431  val=0.0425
+  Epoch  94/100  train=0.0429  val=0.0436
+  Epoch  95/100  train=0.0431  val=0.0428
+  Epoch  96/100  train=0.0431  val=0.0431
+  Epoch  97/100  train=0.0431  val=0.0429
+  Epoch  98/100  train=0.0430  val=0.0430
+  Epoch  99/100  train=0.0431  val=0.0426
+  Epoch 100/100  train=0.0432  val=0.0429  MMD=0.15648
+
+Best generator val loss: 0.0422
+
+Saved: data/results/training_curves.png
+
+All done. Checkpoints in model/checkpoints/

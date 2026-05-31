@@ -27,6 +27,7 @@ Testable without frontend:
 
 import os
 import sys
+import time
 import hashlib
 from pathlib import Path
 from dotenv import load_dotenv
@@ -129,13 +130,15 @@ class FormationCounts(BaseModel):
 
 
 class StepRequest(BaseModel):
-    action:      str        # Action name OR keyboard key (e.g. "ADVANCE" or "w")
-    team_id_a:   int
-    team_id_b:   int
-    context:     ContextIn
-    alpha:       float = 1.0
-    formation_a: dict | None = None   # {def, mid, fwd} from /api/squad
-    formation_b: dict | None = None
+    action:         str         # Action name OR keyboard key (e.g. "ADVANCE" or "w")
+    team_id_a:      int
+    team_id_b:      int
+    context:        ContextIn
+    alpha:          float = 1.0
+    formation_a:    dict | None = None   # {def, mid, fwd} from /api/squad
+    formation_b:    dict | None = None
+    continuity:     float = 0.15         # max per-player Δ per step in [0,1] space
+    prev_positions: list | None = None   # [[x,y]×22] from previous frame; enables continuity
 
 
 class SequenceStep(BaseModel):
@@ -161,6 +164,14 @@ class SuggestRequest(BaseModel):
     team_id_a: int
     team_id_b: int
     context:   ContextIn
+
+
+class OpeningStateRequest(BaseModel):
+    team_id_a:   int
+    team_id_b:   int
+    context:     ContextIn
+    formation_a: dict | None = None
+    formation_b: dict | None = None
 
 
 class OptimizeRequest(BaseModel):
@@ -336,17 +347,24 @@ async def step(req: StepRequest):
         poss_team  = req.context.poss_team,
     )
 
+    t0 = time.perf_counter()
     result = _engine.step(
-        action      = action,
-        context     = ctx,
-        team_id_a   = req.team_id_a,
-        team_id_b   = req.team_id_b,
-        alpha       = req.alpha,
-        formation_a = req.formation_a,
-        formation_b = req.formation_b,
+        action         = action,
+        context        = ctx,
+        team_id_a      = req.team_id_a,
+        team_id_b      = req.team_id_b,
+        alpha          = req.alpha,
+        formation_a    = req.formation_a,
+        formation_b    = req.formation_b,
+        continuity     = req.continuity,
+        prev_positions = req.prev_positions,
+        gen_steps      = 15,   # 15 steps: ~87ms vs 127ms for 30; quality adequate for demo
     )
+    step_ms = round((time.perf_counter() - t0) * 1000, 1)
 
-    return result.to_json_safe()
+    payload = result.to_json_safe()
+    payload["_timing_ms"] = step_ms   # surfaced in console for latency audit
+    return payload
 
 
 def _resolve_action(action_str: str) -> "Action":
@@ -439,6 +457,69 @@ async def optimize(req: OptimizeRequest):
         adversarial = req.adversarial,
     )
     return {"sequences": results}
+
+
+@app.post("/api/opening_state")
+async def opening_state(req: OpeningStateRequest):
+    """Return a generated frame from team fingerprints with no action transform.
+
+    Stage 2 mode: encode → generate → debias. No action embedding is applied,
+    so the frame reflects only team identity + context, not a chosen action.
+    The response shape is identical to /api/step so the frontend can treat it
+    the same way.
+    """
+    if _engine is None:
+        raise HTTPException(503, "Engine not loaded — run training first.")
+    if req.team_id_a not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_a={req.team_id_a} not in fingerprints")
+    if req.team_id_b not in _engine.fingerprints:
+        raise HTTPException(400, f"team_id_b={req.team_id_b} not in fingerprints")
+
+    ctx = MatchContext(
+        score_diff = req.context.score_diff,
+        minute     = req.context.minute,
+        zone       = req.context.zone,
+        phase      = req.context.phase,
+        poss_team  = req.context.poss_team,
+    )
+
+    fa = FormationCounts.from_dict(req.formation_a).to_engine_dict() if req.formation_a else None
+    fb = FormationCounts.from_dict(req.formation_b).to_engine_dict() if req.formation_b else None
+
+    with torch.no_grad():
+        fp_a = _engine.fingerprints[req.team_id_a].to(_engine.device)
+        fp_b = _engine.fingerprints[req.team_id_b].to(_engine.device)
+
+        # Stage-2 mode: encode condition from fingerprints, generate, debias.
+        # No action transform — frame reflects team identity + context only.
+        c      = _engine._encode_condition(fp_a, fp_b, ctx)
+        gen_xy = _engine._debias_positions(
+            _engine.generator.generate(_engine.roles, c, _engine.mask, n_steps=30),
+            ctx, formation_a=fa, formation_b=fb,
+        )
+
+        probs = _engine._run_sse_probs(fp_a, fp_b, ctx)
+
+    positions_np = gen_xy.squeeze(0).cpu().numpy()
+    roles_np     = _engine.roles.squeeze(0).cpu().numpy()
+    mask_np      = _engine.mask.squeeze(0).cpu().numpy()
+
+    return {
+        "action":    "OPENING",
+        "positions": positions_np.tolist(),
+        "roles":     roles_np.tolist(),
+        "mask":      mask_np.tolist(),
+        "probs":     probs.to_dict(),
+        "deltas":    None,
+        "context": {
+            "score_diff":       ctx.score_diff,
+            "minute":           ctx.minute,
+            "zone":             ctx.zone,
+            "phase":            ctx.phase,
+            "poss_team":        ctx.poss_team,
+            "defense_response": "",
+        },
+    }
 
 
 @app.post("/api/suggest")

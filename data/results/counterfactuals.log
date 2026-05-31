@@ -1,0 +1,50 @@
+ERROR:root:code for hash blake2b was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2b
+ERROR:root:code for hash blake2s was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2s
+/Users/jessicafan/tactical-world-model/scripts/05_counterfactuals.py:77: DtypeWarning: Columns (5) have mixed types. Specify dtype option on import or set low_memory=False.
+  meta = pd.read_csv(META_PATH) if META_PATH.exists() else pd.DataFrame()
+Tactical World Model — Causal Intervention Engine
+==================================================
+Loaded 39 team fingerprints
+
+[1/3] Tactical fingerprint PCA…
+PCA variance explained: PC1=50.5%  PC2=21.9%
+Saved: data/results/tactical_pca.png
+  Cluster distribution:
+{'possession': 18, 'hybrid': 10, 'counter': 6, 'pressing': 5}
+
+[2/3] Win-probability intervention study…
+  Intervention study:   0%|          | 0/10 [00:00<?, ?it/s]  Intervention study: 100%|██████████| 10/10 [00:00<00:00, 367921.40it/s]
+/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+
+[3/3] Player importance via ablation…
+  Saved: data/results/player_importance.csv
+  Top-5 most impactful player slots:
+ player_slot  mean_impact  impact_shot
+           0     0.040572     0.073558
+           1     0.009049     0.025051
+           6     0.007586     0.012686
+           7     0.007460     0.013511
+           2     0.007370     0.019983
+
+Done.

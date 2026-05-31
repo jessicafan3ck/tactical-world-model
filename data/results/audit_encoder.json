@@ -1,0 +1,226 @@
+{
+  "summary": {
+    "mean_affine_held_out": 0.5172,
+    "mean_mlp_held_out": 0.5785,
+    "pca_baseline": -0.006,
+    "over_ceiling_affine": 0,
+    "over_ceiling_mlp": 0,
+    "winner_counts": {
+      "affine": 0,
+      "mlp": 2,
+      "tie": 8
+    },
+    "recommendation": "MLP"
+  },
+  "per_action": {
+    "ADVANCE": {
+      "label": "Advance",
+      "n_val": 114,
+      "R_marginal": 0.1964,
+      "R_conditional": 0.5035,
+      "affine": {
+        "mean": 0.3886,
+        "ci_lo": 0.3065,
+        "ci_hi": 0.4701,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.4294,
+        "ci_lo": 0.3483,
+        "ci_hi": 0.5138,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "HOLD": {
+      "label": "Hold / Recycle",
+      "n_val": 0,
+      "R_marginal": 0.0374,
+      "R_conditional": 0.3534,
+      "affine": {
+        "mean": NaN,
+        "ci_lo": NaN,
+        "ci_hi": NaN,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": NaN,
+        "ci_lo": NaN,
+        "ci_hi": NaN,
+        "over_ceiling": false
+      },
+      "winner": "\u2014"
+    },
+    "SWITCH_LEFT": {
+      "label": "Switch Left",
+      "n_val": 145,
+      "R_marginal": 0.2149,
+      "R_conditional": 0.5643,
+      "affine": {
+        "mean": 0.3683,
+        "ci_lo": 0.2912,
+        "ci_hi": 0.4399,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.514,
+        "ci_lo": 0.4596,
+        "ci_hi": 0.5776,
+        "over_ceiling": false
+      },
+      "winner": "MLP"
+    },
+    "SWITCH_RIGHT": {
+      "label": "Switch Right",
+      "n_val": 130,
+      "R_marginal": 0.1597,
+      "R_conditional": 0.5344,
+      "affine": {
+        "mean": 0.2353,
+        "ci_lo": 0.1547,
+        "ci_hi": 0.3279,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.5132,
+        "ci_lo": 0.4401,
+        "ci_hi": 0.5743,
+        "over_ceiling": false
+      },
+      "winner": "MLP"
+    },
+    "PRESS": {
+      "label": "High Press",
+      "n_val": 113,
+      "R_marginal": 0.1398,
+      "R_conditional": 0.8371,
+      "affine": {
+        "mean": 0.6992,
+        "ci_lo": 0.6238,
+        "ci_hi": 0.7776,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.7843,
+        "ci_lo": 0.7163,
+        "ci_hi": 0.8377,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "LOW_BLOCK": {
+      "label": "Low Block",
+      "n_val": 87,
+      "R_marginal": 0.3815,
+      "R_conditional": 0.6527,
+      "affine": {
+        "mean": 0.6478,
+        "ci_lo": 0.5501,
+        "ci_hi": 0.7343,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.667,
+        "ci_lo": 0.5717,
+        "ci_hi": 0.7495,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "SHOOT": {
+      "label": "Shoot",
+      "n_val": 140,
+      "R_marginal": 0.9234,
+      "R_conditional": 0.9681,
+      "affine": {
+        "mean": 0.982,
+        "ci_lo": 0.9663,
+        "ci_hi": 0.9908,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.9833,
+        "ci_lo": 0.9681,
+        "ci_hi": 0.9916,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "DRIBBLE": {
+      "label": "Dribble",
+      "n_val": 173,
+      "R_marginal": 0.3009,
+      "R_conditional": 0.4208,
+      "affine": {
+        "mean": 0.3267,
+        "ci_lo": 0.2533,
+        "ci_hi": 0.3828,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.3588,
+        "ci_lo": 0.291,
+        "ci_hi": 0.4248,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "THROUGH_BALL": {
+      "label": "Through Ball",
+      "n_val": 36,
+      "R_marginal": 0.4363,
+      "R_conditional": 0.5226,
+      "affine": {
+        "mean": 0.4845,
+        "ci_lo": 0.387,
+        "ci_hi": 0.5726,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.463,
+        "ci_lo": 0.3883,
+        "ci_hi": 0.5439,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "CROSS": {
+      "label": "Cross",
+      "n_val": 159,
+      "R_marginal": 0.6285,
+      "R_conditional": 0.6992,
+      "affine": {
+        "mean": 0.689,
+        "ci_lo": 0.6183,
+        "ci_hi": 0.7485,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.7044,
+        "ci_lo": 0.6303,
+        "ci_hi": 0.7666,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    },
+    "KEEPER_BALL": {
+      "label": "Play Out",
+      "n_val": 105,
+      "R_marginal": 0.3818,
+      "R_conditional": 0.4097,
+      "affine": {
+        "mean": 0.3511,
+        "ci_lo": 0.2638,
+        "ci_hi": 0.4311,
+        "over_ceiling": false
+      },
+      "mlp": {
+        "mean": 0.3677,
+        "ci_lo": 0.2933,
+        "ci_hi": 0.4491,
+        "over_ceiling": false
+      },
+      "winner": "tie"
+    }
+  }
+}

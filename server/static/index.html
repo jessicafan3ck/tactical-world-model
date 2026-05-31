@@ -47,7 +47,6 @@ body {
 [data-mode="explainer"] .analyst-only  { display: none !important; }
 [data-mode="analyst"]   .explainer-only{ display: none !important; }
 [data-mode="presenter"] .non-presenter { display: none !important; }
-[data-mode="presenter"] .presenter-scale { transform: scale(1.08); transform-origin: top left; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 header {
@@ -107,7 +106,7 @@ header {
   grid-template-columns: 220px 1fr;
   overflow: hidden;
 }
-[data-mode="presenter"] .workspace { grid-template-columns: 180px 1fr; }
+[data-mode="presenter"] .workspace { grid-template-columns: 140px 1fr; }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .sidebar {
@@ -131,6 +130,8 @@ header {
 .action-xl:hover { border-color: var(--blue); background: rgba(88,166,255,0.07); }
 .action-xl:active { opacity: 0.75; }
 .action-xl.previewing { border-color: var(--gold); background: rgba(240,192,64,0.07); }
+.action-xl.selected  { border-color: var(--blue); border-width: 2px; background: rgba(88,166,255,0.10); }
+.action-xl.illegal   { opacity: 0.38; pointer-events: none; }
 .action-xl .ax-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .action-xl .ax-hint { font-size: 10px; color: var(--muted); }
 .action-xl .ax-hint.pos { color: var(--green); }
@@ -396,6 +397,38 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
   padding: 5px 12px; font-size: 11px; cursor: pointer; font-family: var(--font);
 }
 
+/* ── Intensity slider (analyst queue) ───────────────────────────────────── */
+.q-alpha {
+  display: flex; align-items: center; gap: 4px; margin-left: auto;
+}
+.q-alpha input[type=range] {
+  width: 44px; height: 3px; accent-color: var(--gold);
+  cursor: pointer; vertical-align: middle;
+}
+.q-alpha-val { font-size: 9px; color: var(--muted); min-width: 20px; text-align: right; }
+
+/* ── P() notation toggle ─────────────────────────────────────────────────── */
+.p-toggle {
+  background: transparent; border: 0.5px solid var(--border);
+  color: var(--muted); border-radius: 3px; padding: 1px 5px;
+  font-size: 9px; cursor: pointer; font-family: monospace;
+  margin-left: 6px; flex-shrink: 0;
+}
+.p-toggle.active { border-color: var(--purple); color: var(--purple); }
+.metric-p-sub {
+  font-size: 9px; color: var(--muted); margin-top: 2px;
+  font-family: monospace; display: none;
+}
+body.show-p-notation .metric-p-sub { display: block; }
+
+/* ── Export button ───────────────────────────────────────────────────────── */
+.btn-export {
+  background: transparent; border: 0.5px solid var(--border);
+  color: var(--muted); padding: 4px 9px; border-radius: 4px;
+  font-size: 11px; font-family: var(--font); cursor: pointer;
+}
+.btn-export:hover { color: var(--text); border-color: var(--gold); }
+
 /* ── Overlay toggles ─────────────────────────────────────────────────────── */
 .overlay-row { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .overlay-btn {
@@ -419,11 +452,20 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
 .analyze-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* ── Responsive Presenter ────────────────────────────────────────────────── */
+/* Layout-based scaling: sidebar shrinks, pitch-wrap gets the freed space,
+   resizeCanvas() redraws the canvas at the new physical dimensions (no CSS
+   transform — that would blur the canvas raster). */
 [data-mode="presenter"] header { padding: 6px 14px; }
-[data-mode="presenter"] .metric-value { font-size: 28px; }
-[data-mode="presenter"] .metric-delta-hero { font-size: 24px; }
+[data-mode="presenter"] .pitch-wrap { padding: 2px; }
+[data-mode="presenter"] .metric-value { font-size: 36px; }
+[data-mode="presenter"] .metric-card.secondary .metric-value { font-size: 24px; }
+[data-mode="presenter"] .metric-delta-hero { font-size: 28px; }
+[data-mode="presenter"] .metric-card { padding: 8px 12px; }
+[data-mode="presenter"] .commentary { padding: 8px 14px; min-height: 36px; }
 [data-mode="presenter"] .commentary-text { font-size: 15px; }
+[data-mode="presenter"] .action-xl { padding: 8px 10px; }
 [data-mode="presenter"] .action-xl .ax-name { font-size: 14px; }
+[data-mode="presenter"] .action-xl .ax-hint { font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) {
   .metric-fill { transition: none; }
@@ -568,7 +610,7 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
     </div>
 
     <!-- Sequence builder (progressive disclosure) -->
-    <details class="disclosure" id="seqBuilderDisc">
+    <details class="disclosure non-presenter" id="seqBuilderDisc">
       <summary>
         Build a sequence
         <span class="disc-chevron">›</span>
@@ -591,22 +633,22 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
     </details>
 
     <!-- Advanced controls (progressive disclosure) -->
-    <details class="disclosure" id="advancedDisc">
+    <details class="disclosure non-presenter" id="advancedDisc">
       <summary>
         Advanced
         <span class="disc-chevron">›</span>
       </summary>
       <div class="disclosure-body">
         <label class="opt-row" title="Team B picks actions that reduce your shot chance">
-          <input type="checkbox" id="chkAdversarial" onchange="S.adversarial=this.checked">
+          <input type="checkbox" id="chkAdversarial" checked onchange="S.adversarial=this.checked">
           <span>Defenders react</span>
         </label>
         <label class="opt-row">
           <span>Variations</span>
           <select class="opt-select" id="selSamples" onchange="S.nSamples=+this.value">
-            <option value="1" selected>1 (set)</option>
+            <option value="1">1 (set)</option>
             <option value="5">5</option>
-            <option value="10">10</option>
+            <option value="10" selected>10</option>
           </select>
         </label>
         <label class="opt-row">
@@ -658,13 +700,17 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
     <!-- Metrics -->
     <div class="metrics-row">
       <!-- Primary: shot chance -->
-      <div class="metric-card">
-        <div class="metric-label">Chance of a shot this possession</div>
+      <div class="metric-card" id="metricShot">
+        <div class="metric-label" style="display:flex;align-items:center">
+          Chance of a shot this possession
+          <button class="p-toggle analyst-only" id="pToggle" onclick="togglePNotation()" title="Show raw P() values">P()</button>
+        </div>
         <div class="metric-value-row">
           <span class="metric-value" id="shotVal">—</span>
           <span class="metric-delta-hero flat" id="shotDelta"></span>
         </div>
         <div class="metric-sub" id="shotSub"></div>
+        <div class="metric-p-sub" id="shotP"></div>
         <div class="metric-track"><div class="metric-fill" id="shotBar" style="width:0%;background:var(--gold)"></div></div>
       </div>
       <!-- Secondary: reach attacking third -->
@@ -674,6 +720,7 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
           <span class="metric-value" id="finVal">—</span>
           <span class="metric-delta-sm flat" id="finDelta"></span>
         </div>
+        <div class="metric-p-sub" id="finP"></div>
         <div class="metric-track"><div class="metric-fill" id="finBar" style="width:0%;background:var(--green)"></div></div>
       </div>
       <!-- Secondary: advance a zone -->
@@ -683,6 +730,7 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
           <span class="metric-value" id="advVal">—</span>
           <span class="metric-delta-sm flat" id="advDelta"></span>
         </div>
+        <div class="metric-p-sub" id="advP"></div>
         <div class="metric-track"><div class="metric-fill" id="advBar" style="width:0%;background:var(--blue)"></div></div>
       </div>
     </div>
@@ -705,8 +753,9 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
       <button class="ctrl" id="btnPlay" onclick="togglePlay()" disabled>▶ Play</button>
       <button class="ctrl" id="btnNext" onclick="seek(S.step+1)" disabled>Next ▶</button>
       <span class="step-ctr" id="stepCtr">—</span>
-      <span class="peak-badge" id="peakBadge">↑ Most dangerous generated frame</span>
-      <button class="ctrl non-presenter" onclick="shareURL()" title="Copy link">🔗</button>
+      <span class="peak-badge" id="peakBadge">the most dangerous frame the engine generated</span>
+      <button class="ctrl non-presenter" onclick="shareURL()" title="Copy link to sequence">🔗</button>
+      <button class="btn-export analyst-only non-presenter" onclick="exportFrame()" title="Download current frame as PNG">↓ PNG</button>
       <select class="speed-sel" id="speedSel">
         <option value="1600">Slow</option>
         <option value="900" selected>Normal</option>
@@ -771,7 +820,7 @@ const S = {
   frames: [],           // sequence frames (batch or accumulated steps)
   step: -1,
   playing: false, timer: null,
-  adversarial: false, nSamples: 1, continuity: 0.15,
+  adversarial: true, nSamples: 10, continuity: 0.15,
   hints: {},            // action → p_shot_delta (preloaded)
   prevProbs: null,      // for delta calculation in explainer mode
   commentaryEnabled: true,
@@ -799,15 +848,16 @@ const DEF_MASK  = new Array(22).fill(false);
 
 let _prevPositions = null;  // for smooth animation
 let _animId = null;
+let _dpr = 1;              // devicePixelRatio, set by resizeCanvas()
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
   resizeCanvas();
   drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
+  updateLegalActions();
   await loadTeams();
   parseURLSequence();
   checkOnboarding();
-  // Analyst mode: open advanced by default
   if (S.mode === "analyst") document.getElementById("advancedDisc").open = true;
 });
 window.addEventListener("resize", () => {
@@ -837,6 +887,15 @@ function setMode(m) {
     document.getElementById("advancedDisc").open = true;
   }
   updateRunBtn();
+  // Reflow layout first, then resize canvas so it fills the new dimensions
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    if (S.step >= 0) renderFrame(S.step);
+    else {
+      const f = { positions: DEF_POSITIONS, roles: DEF_ROLES, mask: DEF_MASK, probs: null };
+      drawFormation(f.positions, f.roles, f.mask, f.probs);
+    }
+  });
 }
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
@@ -868,7 +927,9 @@ function onTeamChange(side) {
   else              { S.teamB = tid; S.teamNameB = name; }
   document.getElementById("legend" + side).textContent = name;
   document.getElementById("dirChip").textContent = S.teamNameA + " attacking →";
-  if (tid) fetchSquad(tid, side);
+  if (tid) fetchSquad(tid, side).then(() => {
+    if (S.teamA && S.teamB) fetchOpeningState();
+  });
   updateRunBtn();
   if (S.teamA && S.teamB) preloadHints();
 }
@@ -895,6 +956,32 @@ async function fetchSquad(teamId, side) {
       S.squadB     = data.squad            || [];
       S.formationB = data.formation_counts || null;
     }
+  } catch {}
+  // Always resolves (no throw) so .then() in onTeamChange fires reliably
+}
+
+// ── Opening state ──────────────────────────────────────────────────────────────
+// Called when both teams are ready. Replaces the static DEF_POSITIONS blob with
+// a real generator frame so the pitch opens on a formation-realistic snapshot.
+async function fetchOpeningState() {
+  if (!S.teamA || !S.teamB) return;
+  // Don't overwrite an in-progress sequence
+  if (S.frames.length > 0) return;
+  try {
+    const res = await fetch("/api/opening_state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        team_id_a: +S.teamA, team_id_b: +S.teamB,
+        context: currentCtx(),
+        formation_a: S.formationA, formation_b: S.formationB,
+      }),
+    });
+    if (!res.ok) return;
+    const frame = await res.json();
+    initIdentities(frame);
+    drawFormation(frame.positions, frame.roles, frame.mask, frame.probs);
+    updateLegalActions();
   } catch {}
 }
 
@@ -953,6 +1040,32 @@ function clearPreview() {
   document.querySelectorAll(".action-xl").forEach(b => b.classList.remove("previewing"));
 }
 
+// ── Legal action gating ────────────────────────────────────────────────────────
+// Mirrors the engine's legality mask so obviously illegal buttons are dimmed.
+// Client-side only — the engine enforces legality server-side as well.
+function updateLegalActions() {
+  const ctx = currentCtx();
+  const zone = ctx.zone, phase = ctx.phase;
+
+  // Rules: SHOOT illegal in zone 0-1; KEEPER_BALL only legal in own half (zone 0)
+  // or when trailing after 72 min; LOW_BLOCK never shown as positive suggestion
+  // but remains clickable — only hard-gate the truly impossible ones.
+  const illegal = new Set();
+  if (zone <= 1)  illegal.add("SHOOT");
+  if (zone >= 2)  illegal.add("KEEPER_BALL");
+  if (phase === 2) { illegal.add("KEEPER_BALL"); } // set piece
+
+  document.querySelectorAll(".action-xl[data-action]").forEach(btn => {
+    btn.classList.toggle("illegal", illegal.has(btn.dataset.action));
+  });
+}
+
+// Re-apply legality when context inputs change
+["iZone","iPhase"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", updateLegalActions);
+});
+
 // ── Context ────────────────────────────────────────────────────────────────────
 function currentCtx() {
   // Use last frame's context if available
@@ -991,7 +1104,12 @@ async function explainerRun(action) {
   if (!S.teamA || !S.teamB) return;
   showLoader(true);
   const prevProbs = S.step >= 0 ? S.frames[S.step]?.probs : null;
+  const t0 = performance.now();
   try {
+    // Pass previous frame's positions so the engine clamps per-player movement
+    // to continuity=0.15 (15% of pitch per step).  Without this each frame is an
+    // independent sample; mean jump ~0.4 in [0,1] space breaks NN identity tracking.
+    const prevFrame = S.step >= 0 ? S.frames[S.step] : null;
     const res = await fetch("/api/step", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -999,10 +1117,14 @@ async function explainerRun(action) {
         action, team_id_a: +S.teamA, team_id_b: +S.teamB,
         context: currentCtx(), alpha: 1.0,
         formation_a: S.formationA, formation_b: S.formationB,
+        continuity:     prevFrame ? S.continuity : 0.0,
+        prev_positions: prevFrame?.positions ?? null,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
+    const t1 = performance.now();
     const frame = await res.json();
+    console.log(`[latency] ${action}: server=${frame._timing_ms}ms  RTT=${Math.round(t1-t0)}ms`);
 
     // Compute delta vs previous step (not vs baseline)
     if (prevProbs) {
@@ -1028,9 +1150,13 @@ async function explainerRun(action) {
     fetchCommentary(frame, S.step);
     if (frame.context) updateCtxBar(frame.context);
     preloadHints();
+    updateLegalActions();
     showPlaybackControls();
     updateSeqQueue();
     showAnalyzeBtn();
+    // Mark the tapped button as the last-selected action
+    document.querySelectorAll(".action-xl").forEach(b =>
+      b.classList.toggle("selected", b.dataset.action === action));
   } catch(e) {
     console.error(e);
   } finally {
@@ -1071,6 +1197,13 @@ function addToQueue(name) {
   updateRunBtn();
 }
 function removeStep(i) { S.queue.splice(i,1); redrawAnalystQueue(); updateRunBtn(); }
+function setStepAlpha(i, v) {
+  if (S.queue[i]) {
+    S.queue[i].alpha = v;
+    const lbl = document.getElementById(`qAlphaVal-${i}`);
+    if (lbl) lbl.textContent = "×" + v.toFixed(1);
+  }
+}
 function redrawAnalystQueue() {
   const list = document.getElementById("qList");
   if (!S.queue.length) {
@@ -1081,6 +1214,11 @@ function redrawAnalystQueue() {
     `<div class="queue-item">
       <span class="q-num">${i+1}</span>
       <span class="q-lbl">${actionLabel(q.action)}</span>
+      <div class="q-alpha">
+        <input type="range" min="0.2" max="1.5" step="0.1" value="${q.alpha.toFixed(1)}"
+               oninput="setStepAlpha(${i}, +this.value)" title="Action intensity">
+        <span class="q-alpha-val" id="qAlphaVal-${i}">×${q.alpha.toFixed(1)}</span>
+      </div>
       <button class="q-rm" onclick="removeStep(${i})">×</button>
     </div>`
   ).join("");
@@ -1219,6 +1357,10 @@ function renderMetrics(p, d, stds, prevProbs) {
   document.getElementById("shotBar").style.width = shotPct + "%";
   document.getElementById("finBar").style.width  = finPct  + "%";
   document.getElementById("advBar").style.width  = advPct  + "%";
+  // P() notation sub-lines (shown only when toggle is active)
+  document.getElementById("shotP").textContent = `P(shot) = ${p.p_shot.toFixed(3)}`;
+  document.getElementById("finP").textContent  = `P(final_third) = ${p.p_final_third.toFixed(3)}`;
+  document.getElementById("advP").textContent  = `P(advance) = ${p.p_advance.toFixed(3)}`;
 
   if (d) {
     const sp = Math.round(d.p_shot * 100);
@@ -1263,7 +1405,8 @@ function clearAll() {
   ["shotVal","finVal","advVal"].forEach(id => document.getElementById(id).textContent = "—");
   ["shotDelta","finDelta","advDelta","shotSub"].forEach(id => document.getElementById(id).textContent = "");
   setCommentary("Pick an action to see how the play reshapes.", true);
-  drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
+  document.querySelectorAll(".action-xl").forEach(b => b.classList.remove("selected"));
+  fetchOpeningState().catch(() => drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null));
   updateSeqQueue();
   showAnalyzeBtn();
 }
@@ -1480,28 +1623,18 @@ function _defaultTier(rank) {
   return rank===0?"gk":rank<=4?"def":rank<=7?"mid":"fwd";
 }
 
-function propagateIdentities(prevPositions, newPositions) {
-  if (!S.identitiesA || !S.identitiesB || !prevPositions) return;
-
-  function matchTeam(identities, newSlotRange) {
-    const used = new Set();
-    return identities.map(id => {
-      const prev = prevPositions[id.slotIdx];
-      if (!prev) return id;
-      let bestSlot = id.slotIdx, bestDist = Infinity;
-      for (let j = newSlotRange[0]; j < newSlotRange[1] && j < newPositions.length; j++) {
-        if (used.has(j)) continue;
-        const d = Math.hypot(prev[0]-newPositions[j][0], prev[1]-newPositions[j][1]);
-        if (d < bestDist) { bestDist = d; bestSlot = j; }
-      }
-      used.add(bestSlot);
-      return { ...id, slotIdx: bestSlot };
-    });
+function propagateIdentities(prevPositions, newPositions, cap = S.continuity) {
+  // With continuity active, slot i in frame N is bounded within `cap` of slot i in
+  // frame N-1 by the generator's max_delta_per_step (Euclidean) constraint.
+  // Slot IS identity — NN reassignment introduces wrong swaps when adjacent players
+  // cluster within the continuity radius. No-op: slotIdx stays fixed; drawPlayers
+  // reads positions[slotIdx] from the current frame naturally.
+  if (!prevPositions || !newPositions) return;
+  for (let i = 0; i < Math.min(prevPositions.length, newPositions.length); i++) {
+    const d = Math.hypot(prevPositions[i][0] - newPositions[i][0],
+                         prevPositions[i][1] - newPositions[i][1]);
+    if (d > cap) console.warn(`[identity] slot ${i} moved ${d.toFixed(3)} > cap ${cap} — continuity guarantee violated; names may drift`);
   }
-
-  const n = newPositions.length;
-  S.identitiesA = matchTeam(S.identitiesA, [0,  Math.min(11, n)]);
-  S.identitiesB = matchTeam(S.identitiesB, [11, Math.min(22, n)]);
 }
 
 function _snapshotIdentities() {
@@ -1517,22 +1650,94 @@ function _restoreIdentities(snap) {
   S.identitiesB = snap.b;
 }
 
+// ── P() notation toggle (Analyst mode) ────────────────────────────────────────
+function togglePNotation() {
+  const on = document.body.classList.toggle("show-p-notation");
+  const btn = document.getElementById("pToggle");
+  if (btn) btn.classList.toggle("active", on);
+}
+
+// ── Frame export (Phase 4 — shareable widget) ──────────────────────────────────
+// Renders the current pitch frame to an off-screen canvas with a metadata strip
+// and triggers a PNG download. Aspect-ratio matches the visible pitch canvas.
+function exportFrame() {
+  const src   = document.getElementById("pitch");
+  if (!src) return;
+
+  // Off-screen canvas: pitch + 68px footer strip
+  const FOOTER = 68;
+  const oc  = document.createElement("canvas");
+  oc.width  = src.width;
+  oc.height = src.height + FOOTER;
+  const ctx = oc.getContext("2d");
+
+  // Copy current pitch
+  ctx.drawImage(src, 0, 0);
+
+  // Footer strip
+  ctx.fillStyle = "#161b22";
+  ctx.fillRect(0, src.height, oc.width, FOOTER);
+
+  // Team names + action
+  const f = S.step >= 0 ? S.frames[S.step] : null;
+  const action = f ? (f.action || "Opening") : "—";
+  const teamLine = `${S.teamNameA}  vs  ${S.teamNameB}  ·  ${action}`;
+
+  ctx.font = "bold 13px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillStyle = "#e6edf3";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(teamLine, 12, src.height + 16);
+
+  // Honesty framing — always present so the number travels with its caveat
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillStyle = "#7d8590";
+  ctx.fillText("Engine's expectation — not a prediction.", 12, src.height + 36);
+
+  // Watermark
+  ctx.font = "10px monospace";
+  ctx.fillStyle = "rgba(125,133,144,0.45)";
+  ctx.textAlign = "right";
+  ctx.fillText("Tactical World Model", oc.width - 12, src.height + 58);
+
+  // Download
+  oc.toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const slug = action.toLowerCase().replace(/\W+/g,"_");
+    a.download = `twm_${slug}_${Date.now()}.png`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, "image/png");
+}
+
 // ── Canvas setup ───────────────────────────────────────────────────────────────
 let CW = 800, CH = 520;
 function resizeCanvas() {
-  const wrap = document.getElementById("pitchWrap");
+  const wrap   = document.getElementById("pitchWrap");
   const canvas = document.getElementById("pitch");
+  const style  = getComputedStyle(wrap);
+  const padH   = parseFloat(style.paddingLeft)  + parseFloat(style.paddingRight);
+  const padV   = parseFloat(style.paddingTop)   + parseFloat(style.paddingBottom);
   const ratio  = 105/68;
-  const mw = wrap.clientWidth - 20, mh = wrap.clientHeight - 20;
-  if (mw/ratio <= mh) { CW=mw; CH=Math.round(mw/ratio); }
-  else                { CH=mh; CW=Math.round(mh*ratio); }
-  canvas.width = CW; canvas.height = CH;
+  const mw = wrap.clientWidth  - padH;
+  const mh = wrap.clientHeight - padV;
+  if (mw/ratio <= mh) { CW = mw;            CH = Math.round(mw/ratio); }
+  else                { CH = mh;            CW = Math.round(mh*ratio); }
+  // Size the backing store at physical pixels so it stays sharp on HiDPI / projector
+  _dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(CW * _dpr);
+  canvas.height = Math.round(CH * _dpr);
+  canvas.style.width  = CW + "px";
+  canvas.style.height = CH + "px";
 }
 const px = x => x * CW;
 const py = y => y * CH;
 
 // ── Pitch drawing ──────────────────────────────────────────────────────────────
 function drawPitchSurface(ctx) {
+  // Reset transform to DPR scale so CSS-pixel coordinates map to physical pixels.
+  // Called once per frame before all other draw calls share the same context.
+  ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
   ctx.clearRect(0,0,CW,CH);
   ctx.fillStyle = "#1a4731"; ctx.fillRect(0,0,CW,CH);
   // Alternating stripes

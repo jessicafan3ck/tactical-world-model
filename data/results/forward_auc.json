@@ -1,0 +1,35 @@
+{
+  "encoder": "ConditionedMLP (learned, match-level split)",
+  "strategies": {
+    "real_peak": {
+      "s2": 0.6989,
+      "s3": 0.7454,
+      "shot": 0.7533,
+      "n": 4000
+    },
+    "real_mean": {
+      "s2": 0.6514,
+      "s3": 0.6038,
+      "shot": 0.6123,
+      "n": 4000
+    },
+    "policy_mean": {
+      "s2": 0.4919,
+      "s3": 0.5247,
+      "shot": 0.6331,
+      "n": 4000
+    },
+    "fixed_mean": {
+      "s2": 0.4953,
+      "s3": 0.481,
+      "shot": 0.673,
+      "n": 4000
+    }
+  },
+  "n_evaluated": 4000,
+  "n_real_sequences": 3983,
+  "n_fallback_sequences": 17,
+  "n_skipped": 0,
+  "fixed_horizon": 4,
+  "leakage_note": "real_peak and real_mean condition on the possession's actual future actions \u2014 outcome-correlated by construction. policy_mean and fixed_mean are outcome-independent. Compare real_peak vs policy_mean to diagnose leakage."
+}

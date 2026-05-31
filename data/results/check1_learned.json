@@ -1,0 +1,76 @@
+{
+  "per_action": {
+    "ADVANCE": {
+      "label": "Advance",
+      "R_ceiling": 0.1964,
+      "affine_cos": 0.5634,
+      "mlp_cos": 0.5872
+    },
+    "HOLD": {
+      "label": "Hold / Recycle",
+      "R_ceiling": 0.0374,
+      "affine_cos": 0.3651,
+      "mlp_cos": 0.4029
+    },
+    "SWITCH_LEFT": {
+      "label": "Switch Left",
+      "R_ceiling": 0.2149,
+      "affine_cos": 0.5178,
+      "mlp_cos": 0.5422
+    },
+    "SWITCH_RIGHT": {
+      "label": "Switch Right",
+      "R_ceiling": 0.1597,
+      "affine_cos": 0.4821,
+      "mlp_cos": 0.5029
+    },
+    "PRESS": {
+      "label": "High Press",
+      "R_ceiling": 0.1398,
+      "affine_cos": 0.762,
+      "mlp_cos": 0.8056
+    },
+    "LOW_BLOCK": {
+      "label": "Low Block",
+      "R_ceiling": 0.3815,
+      "affine_cos": 0.6589,
+      "mlp_cos": 0.6736
+    },
+    "SHOOT": {
+      "label": "Shoot",
+      "R_ceiling": 0.9234,
+      "affine_cos": 0.9766,
+      "mlp_cos": 0.978
+    },
+    "DRIBBLE": {
+      "label": "Dribble",
+      "R_ceiling": 0.3009,
+      "affine_cos": 0.422,
+      "mlp_cos": 0.4594
+    },
+    "THROUGH_BALL": {
+      "label": "Through Ball",
+      "R_ceiling": 0.4363,
+      "affine_cos": 0.4481,
+      "mlp_cos": 0.4563
+    },
+    "CROSS": {
+      "label": "Cross",
+      "R_ceiling": 0.6285,
+      "affine_cos": 0.6184,
+      "mlp_cos": 0.6222
+    },
+    "KEEPER_BALL": {
+      "label": "Play Out",
+      "R_ceiling": 0.3818,
+      "affine_cos": 0.3859,
+      "mlp_cos": 0.3868
+    }
+  },
+  "mean_diagonal": {
+    "pca_baseline": -0.006,
+    "affine": 0.5637,
+    "mlp": 0.5834,
+    "R_ceiling": 0.3455
+  }
+}

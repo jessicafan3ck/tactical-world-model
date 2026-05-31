@@ -201,24 +201,31 @@ class ConditionalEngine:
 
     @torch.no_grad()
     def step(self,
-             action:      "Action",
-             context:     "MatchContext",
-             team_id_a:   int,
-             team_id_b:   int,
-             alpha:       float       = 1.0,
-             gen_steps:   int         = 30,
-             formation_a: dict | None = None,
-             formation_b: dict | None = None) -> "ActionResult":
+             action:         "Action",
+             context:        "MatchContext",
+             team_id_a:      int,
+             team_id_b:      int,
+             alpha:          float       = 1.0,
+             gen_steps:      int         = 30,
+             formation_a:    dict | None = None,
+             formation_b:    dict | None = None,
+             continuity:     float       = 0.0,
+             prev_positions: list | None = None) -> "ActionResult":
         """
         Execute one conditional inference step.
 
         Args:
-            action     : user's chosen Action
-            context    : current MatchContext
-            team_id_a  : attacking team id (the one acting)
-            team_id_b  : defending team id
-            alpha      : action intensity [0, 1]
-            gen_steps  : ODE integration steps (30 = fast, 50 = quality)
+            action         : user's chosen Action
+            context        : current MatchContext
+            team_id_a      : attacking team id (the one acting)
+            team_id_b      : defending team id
+            alpha          : action intensity [0, 1]
+            gen_steps      : ODE integration steps (15 = demo, 30 = quality)
+            continuity     : max per-player displacement in [0,1] per step.
+                             0 = fully independent sample; 0.15 = demo default.
+            prev_positions : [[x,y], ...] for all 22 players from the previous
+                             frame.  Enables the continuity clamp so dots don't
+                             teleport between steps and identity tracking works.
 
         Returns:
             ActionResult with freeze frame + probabilities + deltas
@@ -234,10 +241,21 @@ class ConditionalEngine:
         # ── Apply action → modified fingerprint ───────────────────────────────
         z_A_mod = self._apply_action(z_A_base, action, context, alpha).to(self.device)
 
+        # ── Build temporal prior from previous frame (enables continuity) ──────
+        x_prior = None
+        if prev_positions is not None and continuity > 0.0:
+            x_prior = torch.tensor(
+                prev_positions, dtype=torch.float32, device=self.device
+            ).unsqueeze(0)   # (1, N, 2)
+
         # ── Generate freeze frame under modified fingerprint ───────────────────
         c = self._encode_condition(z_A_mod, z_B, context)
         gen_xy = self._debias_positions(
-            self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps),
+            self.generator.generate(
+                self.roles, c, self.mask, n_steps=gen_steps,
+                x_prior=x_prior,
+                max_delta_per_step=continuity if continuity > 0.0 else None,
+            ),
             context,
             formation_a=formation_a,
             formation_b=formation_b,

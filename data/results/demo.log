@@ -1,0 +1,52 @@
+ERROR:root:code for hash blake2b was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2b
+ERROR:root:code for hash blake2s was not found.
+Traceback (most recent call last):
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 307, in <module>
+    globals()[__func_name] = __get_hash(__func_name)
+                             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 129, in __get_openssl_constructor
+    return __get_builtin_constructor(name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/hashlib.py", line 123, in __get_builtin_constructor
+    raise ValueError('unsupported hash type ' + name)
+ValueError: unsupported hash type blake2s
+/Users/jessicafan/tactical-world-model/scripts/06_demo.py:594: DtypeWarning: Columns (5) have mixed types. Specify dtype option on import or set low_memory=False.
+  meta = pd.read_csv(META_PATH) if META_PATH.exists() else pd.DataFrame()
+/Users/jessicafan/tactical-world-model/scripts/06_demo.py:410: UserWarning: No artists with labels found to put in legend.  Note that artists whose label start with an underscore are ignored when legend() is called with no argument.
+  ax.legend(loc="upper right", bbox_to_anchor=(1.35, 1.15),
+/Users/jessicafan/.pyenv/versions/3.11.8/lib/python3.11/site-packages/torch/nn/modules/transformer.py:382: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Tactical World Model — Demo Visualization
+==================================================
+Loaded 39 team fingerprints
+Demo teams: Manchester City WFC vs Arsenal WFC
+
+[1/5] Match timeline…
+  Saved: data/results/demo/match_timeline.png
+  Saved: data/results/demo/win_prob_timeline.png
+  Score: Manchester City WFC 0–0 Arsenal WFC
+
+[2/5] Fingerprint radar…
+  Saved: data/results/demo/fingerprint_radar.png
+
+[3/5] Style transfer comparison…
+  Saved: data/results/demo/style_transfer.png
+
+[4/5] Freeze-frame ODE animation…
+  Saved: data/results/demo/freeze_frame_animation.gif
+
+[5/5] Demo summary poster…
+  Saved: data/results/demo/demo_summary.png
+
+All outputs in: data/results/demo
+Done.
