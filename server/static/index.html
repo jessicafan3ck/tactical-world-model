@@ -1601,7 +1601,6 @@ function drawPressureOverlay(ctx, positions, roles, mask) {
 }
 
 function drawPassingLanes(ctx, positions, roles, mask) {
-  // Find actor (ball carrier)
   let actorIdx = null;
   for (let i = 0; i < roles.length; i++) {
     if ((!mask || !mask[i]) && roles[i][1] > 0.5) { actorIdx = i; break; }
@@ -1618,84 +1617,112 @@ function drawPassingLanes(ctx, positions, roles, mask) {
 
   for (const tm of teammates) {
     const [tx, ty] = positions[tm];
-    // Count defenders whose projection onto the lane falls within the segment
     let blocked = 0;
     const lenSq = (tx-ax)**2 + (ty-ay)**2;
     for (const def of defenders) {
       const [dx, dy] = positions[def];
       const t = lenSq < 1e-6 ? 0 : Math.max(0, Math.min(1,
         ((dx-ax)*(tx-ax) + (dy-ay)*(ty-ay)) / lenSq));
-      const distToLane = Math.hypot(dx - (ax+t*(tx-ax)), dy - (ay+t*(ty-ay)));
-      if (distToLane < 0.07) blocked++;
+      const dist = Math.hypot(dx-(ax+t*(tx-ax)), dy-(ay+t*(ty-ay)));
+      if (dist < 0.07) blocked++;
     }
 
     const open    = blocked === 0;
     const partial = blocked === 1;
     const [r,g,b] = open ? [63,185,80] : partial ? [240,192,64] : [248,81,73];
-    const alpha   = open ? 0.75 : partial ? 0.45 : 0.2;
-    const lw      = open ? 2.5 : 1.5;
+    const alpha   = open ? 0.88 : partial ? 0.6 : 0.28;
+    const lw      = open ? 3.5 : partial ? 2 : 1.5;
 
+    // Lane line
     ctx.beginPath();
     ctx.moveTo(px(ax), py(ay));
     ctx.lineTo(px(tx), py(ty));
     ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
     ctx.lineWidth = lw;
-    ctx.setLineDash(open ? [] : [4, 3]);
+    ctx.setLineDash(open ? [] : partial ? [6,3] : [3,4]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Endpoint dot on teammate
+    // Arrowhead at teammate end (open lanes only)
+    if (open) {
+      const angle = Math.atan2(py(ty)-py(ay), px(tx)-px(ax));
+      const arrowLen = 10, arrowAngle = 0.42;
+      ctx.beginPath();
+      ctx.moveTo(px(tx), py(ty));
+      ctx.lineTo(
+        px(tx) - arrowLen * Math.cos(angle - arrowAngle),
+        py(ty) - arrowLen * Math.sin(angle - arrowAngle));
+      ctx.moveTo(px(tx), py(ty));
+      ctx.lineTo(
+        px(tx) - arrowLen * Math.cos(angle + arrowAngle),
+        py(ty) - arrowLen * Math.sin(angle + arrowAngle));
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Endpoint dot
     ctx.beginPath();
-    ctx.arc(px(tx), py(ty), 4, 0, 2*Math.PI);
-    ctx.fillStyle = `rgba(${r},${g},${b},${alpha * 0.8})`;
+    ctx.arc(px(tx), py(ty), open ? 5 : 3.5, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha * 0.75})`;
     ctx.fill();
   }
 
-  ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(63,185,80,0.7)";
-  ctx.fillText("Open lane  ", px(0.02), py(0.04));
-  ctx.fillStyle = "rgba(248,81,73,0.7)";
-  ctx.fillText("            Blocked", px(0.02), py(0.04));
-
-  // Cleaner: draw a small legend
-  const ly = py(0.04);
-  ctx.beginPath(); ctx.moveTo(px(0.02), ly+4); ctx.lineTo(px(0.06), ly+4);
-  ctx.strokeStyle="rgba(63,185,80,0.7)"; ctx.lineWidth=2; ctx.stroke();
-  ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.font="9px monospace";
-  ctx.fillText("open", px(0.065), py(0.04));
-
-  ctx.beginPath(); ctx.moveTo(px(0.10), ly+4); ctx.lineTo(px(0.14), ly+4);
-  ctx.strokeStyle="rgba(248,81,73,0.6)"; ctx.lineWidth=1.5;
-  ctx.setLineDash([3,2]); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillText("blocked", px(0.145), py(0.04));
+  // Legend
+  const ly = py(0.04) + 4;
+  ctx.lineWidth = 3.5; ctx.setLineDash([]);
+  ctx.strokeStyle = "rgba(63,185,80,0.88)";
+  ctx.beginPath(); ctx.moveTo(px(0.02), ly); ctx.lineTo(px(0.055), ly); ctx.stroke();
+  ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+  ctx.strokeStyle = "rgba(248,81,73,0.6)";
+  ctx.beginPath(); ctx.moveTo(px(0.075), ly); ctx.lineTo(px(0.11), ly); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "9px monospace"; ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("open", px(0.06), ly);
+  ctx.fillText("blocked", px(0.115), ly);
+  ctx.textBaseline = "alphabetic";
 }
 
 function drawSpaceMap(ctx, positions, roles, mask) {
-  // Vertical strips: color by which team dominates (more players in that band)
-  const strips = 18;
-  for (let s = 0; s < strips; s++) {
-    const x1 = s / strips, x2 = (s+1) / strips;
-    let cA = 0, cB = 0;
-    for (let i = 0; i < positions.length; i++) {
-      if (mask && mask[i]) continue;
-      const xp = positions[i][0];
-      if (xp >= x1 && xp < x2) {
-        if (roles[i][0] > 0.5) cA++; else cB++;
+  // Voronoi-style space control: each cell is owned by whichever team
+  // has the nearest player. Margin (dB - dA) drives opacity.
+  const gridX = 32, gridY = 20;
+  const cellW = px(1/gridX) + 1, cellH = py(1/gridY) + 1;
+
+  for (let ix = 0; ix < gridX; ix++) {
+    for (let iy = 0; iy < gridY; iy++) {
+      const cx = (ix + 0.5) / gridX;
+      const cy = (iy + 0.5) / gridY;
+      let minA = Infinity, minB = Infinity;
+      for (let i = 0; i < positions.length; i++) {
+        if (mask && mask[i]) continue;
+        const d = Math.hypot(positions[i][0] - cx, positions[i][1] - cy);
+        if (roles[i][0] > 0.5) minA = Math.min(minA, d);
+        else                    minB = Math.min(minB, d);
       }
+      if (minA === Infinity && minB === Infinity) continue;
+      const margin = minB - minA; // positive → Team A closer
+      if (Math.abs(margin) < 0.025) continue; // contested
+      const alpha = Math.min(Math.abs(margin) * 1.6, 0.52);
+      ctx.fillStyle = margin > 0
+        ? `rgba(88,166,255,${alpha})`
+        : `rgba(248,81,73,${alpha})`;
+      ctx.fillRect(px(ix/gridX), py(iy/gridY), cellW, cellH);
     }
-    if (cA + cB === 0) continue;
-    const dom = (cA - cB) / (cA + cB);
-    if (Math.abs(dom) < 0.15) continue; // contested — leave transparent
-    const alpha = Math.min(Math.abs(dom) * 0.22, 0.28);
-    ctx.fillStyle = dom > 0
-      ? `rgba(88,166,255,${alpha})`   // Team A (blue)
-      : `rgba(248,81,73,${alpha})`;   // Team B (red)
-    ctx.fillRect(px(x1), 0, px(x2-x1)+1, CH);
   }
 
-  ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(88,166,255,0.65)";
-  ctx.fillText("Space map — blue: Team A dominates, red: Team B", px(0.02), py(0.04));
+  // Legend
+  const ly = py(0.04);
+  ctx.fillStyle = "rgba(88,166,255,0.55)";
+  ctx.fillRect(px(0.02), ly, 10, 10);
+  ctx.fillStyle = "rgba(248,81,73,0.55)";
+  ctx.fillRect(px(0.02)+14, ly, 10, 10);
+  ctx.font = "9px monospace"; ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText("A space", px(0.02)+26, ly);
+  ctx.fillText("B space", px(0.02)+26+52, ly);
+  ctx.textBaseline = "alphabetic";
 }
 
 // ── Animated frame transition ─────────────────────────────────────────────────

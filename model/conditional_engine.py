@@ -561,25 +561,55 @@ class ConditionalEngine:
     def _debias_positions(self, gen_xy: torch.Tensor,
                           context: "MatchContext") -> torch.Tensor:
         """
-        Apply per-(zone, phase) x-position correction to teammate positions.
+        Apply per-(zone, phase) x-position correction to teammate positions,
+        then pin both goalkeepers to their respective goal ends.
 
         gen_xy : (1, N, 2) generated positions (normalised [0,1])
         Returns the same shape with teammate x shifted by Δx, clamped to [0,1].
         The phase encoding matches the debias fit: 0=open/counter, 2=set_piece.
         """
         if not self._debias:
-            return gen_xy
+            return self._pin_goalkeepers(gen_xy)
         # Map engine phase to debias phase key: 0=open_play, 1=counter, 2=set_piece+
         phase_key = 2 if context.phase >= 2 else context.phase
         dx = self._debias.get((min(context.zone, 3), phase_key), 0.0)
         if abs(dx) < 1e-6:
-            return gen_xy
+            return self._pin_goalkeepers(gen_xy)
         # Teammate mask from roles: (1, N, 2) → is_teammate = roles[:, :, 0] > 0.5
         teammate = (self.roles[:, :, 0] > 0.5).unsqueeze(-1)  # (1, N, 1)
         x_shift  = torch.zeros_like(gen_xy)
         x_shift[:, :, 0] = dx   # shift only x-channel
         corrected = gen_xy + teammate.float() * x_shift
-        return corrected.clamp(0.0, 1.0)
+        return self._pin_goalkeepers(corrected.clamp(0.0, 1.0))
+
+    def _pin_goalkeepers(self, xy: torch.Tensor) -> torch.Tensor:
+        """
+        Clamp each team's goalkeeper to a realistic goal-side band.
+
+        Convention: Team A (indices 0-10) attacks left → right.
+                    Their GK (lowest x among them) guards the left end (x ≈ 0.05).
+                    Team B (indices 11-21) attacks right → left.
+                    Their GK (highest x among them) guards the right end (x ≈ 0.95).
+
+        Both GKs are clamped vertically to the central corridor (y ∈ [0.35, 0.65])
+        so they stay on or near the goal line rather than drifting to a flank.
+        """
+        N = xy.shape[1]
+        if N < 22:
+            return xy
+        xy = xy.clone()
+
+        # Team A GK: player in [0, 10] with smallest x
+        gk_a = int(xy[0, :11, 0].argmin().item())
+        xy[0, gk_a, 0] = xy[0, gk_a, 0].clamp(0.02, 0.13)
+        xy[0, gk_a, 1] = xy[0, gk_a, 1].clamp(0.35, 0.65)
+
+        # Team B GK: player in [11, 21] with largest x
+        gk_b = 11 + int(xy[0, 11:22, 0].argmax().item())
+        xy[0, gk_b, 0] = xy[0, gk_b, 0].clamp(0.87, 0.98)
+        xy[0, gk_b, 1] = xy[0, gk_b, 1].clamp(0.35, 0.65)
+
+        return xy
 
     def _ctx_tensor(self, ctx: "MatchContext") -> torch.Tensor:
         """Build the (1, 3) context tensor [zone/3, phase_open, phase_counter]."""
