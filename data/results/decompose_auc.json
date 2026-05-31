@@ -1,0 +1,47 @@
+{
+  "description": "Stage1=SSE on real frames (ceiling); Stage2=SSE on generated frames no transform; Stage3=full pipeline (Check2 single-step)",
+  "n_evaluated": 3911,
+  "n_skipped": 89,
+  "results": {
+    "reached_s2": {
+      "stage1_ceiling": 0.7921,
+      "stage1_std": 0.0091,
+      "stage2_gen_only": 0.5089,
+      "stage2_std": 0.0115,
+      "stage3_enc_added": 0.4952,
+      "stage3_std": 0.0187,
+      "delta_generator": 0.2832,
+      "delta_action_encoder": 0.0138,
+      "n": 3911,
+      "n_positive": 1952
+    },
+    "reached_s3": {
+      "stage1_ceiling": 0.6331,
+      "stage1_std": 0.0109,
+      "stage2_gen_only": 0.5446,
+      "stage2_std": 0.0526,
+      "stage3_enc_added": 0.5379,
+      "stage3_std": 0.0239,
+      "delta_generator": 0.0885,
+      "delta_action_encoder": 0.0068,
+      "n": 3911,
+      "n_positive": 314
+    },
+    "reached_shot": {
+      "stage1_ceiling": 0.6027,
+      "stage1_std": 0.0433,
+      "stage2_gen_only": 0.5876,
+      "stage2_std": 0.1042,
+      "stage3_enc_added": 0.5511,
+      "stage3_std": 0.0648,
+      "delta_generator": 0.0151,
+      "delta_action_encoder": 0.0365,
+      "n": 3911,
+      "n_positive": 41
+    }
+  },
+  "saturation_check": {
+    "p_advance_p95": 0.4149,
+    "frac_above_0_95": 0.0
+  }
+}

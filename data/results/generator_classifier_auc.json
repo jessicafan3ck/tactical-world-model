@@ -1,0 +1,37 @@
+{
+  "classifier_auc_mean": 0.8451,
+  "classifier_auc_std": 0.0112,
+  "n_frames": 2000,
+  "gen_steps": 30,
+  "lim_feature_ks": {
+    "territory_zone": {
+      "real_mean": 0.47702132211625575,
+      "gen_mean": 0.41086364844441414,
+      "ks_stat": 0.3415,
+      "p_value": 0.0
+    },
+    "s_width_asym": {
+      "real_mean": 0.16319095081929116,
+      "gen_mean": 0.1500943256933242,
+      "ks_stat": 0.148,
+      "p_value": 0.0
+    },
+    "s_vert_support": {
+      "real_mean": 0.07558016120595858,
+      "gen_mean": 0.14329630792327225,
+      "ks_stat": 0.678,
+      "p_value": 0.0
+    },
+    "s_pressure": {
+      "real_mean": 0.09186186055745929,
+      "gen_mean": 0.12995197275746614,
+      "ks_stat": 0.1935,
+      "p_value": 0.0
+    }
+  },
+  "interpretation": {
+    "classifier_auc_0.5": "generated frames are spatially indistinguishable from real",
+    "classifier_auc_1.0": "generated frames have systematic spatial artifacts",
+    "ks_p_gt_0.05": "generator matches real distribution on this LIM concept"
+  }
+}
