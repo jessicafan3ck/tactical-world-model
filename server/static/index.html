@@ -776,6 +776,8 @@ const S = {
   prevProbs: null,      // for delta calculation in explainer mode
   commentaryEnabled: true,
   overlay: "none",      // "none" | "pressure" | "lanes" | "space"
+  formationA: null,     // {def, mid, fwd} from /api/squad — null = default 4-3-3
+  formationB: null,
 };
 
 // ── Default formation (4-3-3) ─────────────────────────────────────────────────
@@ -884,8 +886,13 @@ async function fetchSquad(teamId, side) {
     const res = await fetch(`/api/squad/${teamId}`);
     if (!res.ok) return;
     const data = await res.json();
-    if (side === "A") S.squadA = data.squad || [];
-    else              S.squadB = data.squad || [];
+    if (side === "A") {
+      S.squadA     = data.squad            || [];
+      S.formationA = data.formation_counts || null;
+    } else {
+      S.squadB     = data.squad            || [];
+      S.formationB = data.formation_counts || null;
+    }
   } catch {}
 }
 
@@ -989,6 +996,7 @@ async function explainerRun(action) {
       body: JSON.stringify({
         action, team_id_a: +S.teamA, team_id_b: +S.teamB,
         context: currentCtx(), alpha: 1.0,
+        formation_a: S.formationA, formation_b: S.formationB,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
@@ -1085,6 +1093,7 @@ async function runSim() {
         adversarial: S.adversarial,
         n_samples: S.nSamples,
         continuity: S.continuity,
+        formation_a: S.formationA, formation_b: S.formationB,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);

@@ -110,12 +110,32 @@ class ContextIn(BaseModel):
     poss_team:  int   = 0
 
 
+class FormationCounts(BaseModel):
+    """Outfield tier counts derived from lineup (GK excluded)."""
+    def_: int = 4   # defenders
+    mid:  int = 3   # midfielders
+    fwd:  int = 3   # forwards
+
+    model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> "FormationCounts | None":
+        if d is None:
+            return None
+        return cls(def_=d.get("def", 4), mid=d.get("mid", 3), fwd=d.get("fwd", 3))
+
+    def to_engine_dict(self) -> dict:
+        return {"def": self.def_, "mid": self.mid, "fwd": self.fwd}
+
+
 class StepRequest(BaseModel):
-    action:    str        # Action name OR keyboard key (e.g. "ADVANCE" or "w")
-    team_id_a: int
-    team_id_b: int
-    context:   ContextIn
-    alpha:     float = 1.0
+    action:      str        # Action name OR keyboard key (e.g. "ADVANCE" or "w")
+    team_id_a:   int
+    team_id_b:   int
+    context:     ContextIn
+    alpha:       float = 1.0
+    formation_a: dict | None = None   # {def, mid, fwd} from /api/squad
+    formation_b: dict | None = None
 
 
 class SequenceStep(BaseModel):
@@ -129,10 +149,12 @@ class SequenceRequest(BaseModel):
     context:         ContextIn
     sequence:        list[SequenceStep]
     minute_per_step: float = 0.5
-    adversarial:     bool  = False   # True → Team B optimises its response
-    n_samples:       int   = 1       # >1 → stochastic mode (Gaussian z-noise)
-    noise_std:       float = 0.05    # noise magnitude as fraction of ||z_A||
-    continuity:      float = 0.0     # max per-player displacement per step (fraction of pitch); 0 = off
+    adversarial:     bool  = False
+    n_samples:       int   = 1
+    noise_std:       float = 0.05
+    continuity:      float = 0.0
+    formation_a:     dict | None = None   # {def, mid, fwd} from /api/squad
+    formation_b:     dict | None = None
 
 
 class SuggestRequest(BaseModel):
@@ -186,13 +208,43 @@ async def list_teams():
     return teams
 
 
+# StatsBomb position name → formation tier
+_POSITION_TIER: dict[str, str] = {
+    "Goalkeeper":         "gk",
+    "Center Back":        "def",
+    "Left Back":          "def",
+    "Right Back":         "def",
+    "Left Wing Back":     "def",
+    "Right Wing Back":    "def",
+    "Defensive Midfield": "mid",
+    "Central Midfield":   "mid",
+    "Left Midfield":      "mid",
+    "Right Midfield":     "mid",
+    "Attacking Midfield": "mid",
+    "Left Wing":          "fwd",
+    "Right Wing":         "fwd",
+    "Center Forward":     "fwd",
+    "Second Striker":     "fwd",
+}
+
+
+def _start_position_name(positions: list) -> str | None:
+    """Extract the position name for the Starting XI entry."""
+    if not isinstance(positions, list):
+        return None
+    for p in positions:
+        if p.get("start_reason") == "Starting XI":
+            return p.get("name")
+    return None
+
+
 @app.get("/api/squad/{team_id}")
 async def squad(team_id: int):
-    """Return the starting XI for a team, sorted by jersey number.
+    """Return the starting XI for a team with name, jersey, tier, and formation counts.
 
     Uses the first match in possession_meta where this team appears, then
-    fetches the StatsBomb lineup.  Returns a list ordered by jersey_number so
-    the frontend can map x-sort rank → player name.
+    fetches the StatsBomb lineup.  Returns players sorted by jersey_number
+    plus a formation_counts dict {def, mid, fwd} derived from lineup positions.
     """
     if not META.exists():
         raise HTTPException(404, "No possession metadata available")
@@ -213,10 +265,8 @@ async def squad(team_id: int):
     except Exception as e:
         raise HTTPException(502, f"StatsBomb lineup fetch failed: {e}")
 
-    # Find the matching team lineup by name
     lineup_df = lineups.get(team_name)
     if lineup_df is None:
-        # Fuzzy fallback: pick the entry whose name most overlaps ours
         for tname, df in lineups.items():
             if team_name.lower() in tname.lower() or tname.lower() in team_name.lower():
                 lineup_df = df
@@ -232,13 +282,29 @@ async def squad(team_id: int):
     starters = lineup_df[lineup_df["positions"].apply(_is_starter)]
     starters = starters.sort_values("jersey_number").head(11)
 
+    players = []
+    tier_counts: dict[str, int] = {"def": 0, "mid": 0, "fwd": 0}
+    for _, row in starters.iterrows():
+        pos_name = _start_position_name(row["positions"])
+        tier = _POSITION_TIER.get(pos_name or "", "mid")  # unknown → mid
+        if tier in tier_counts:
+            tier_counts[tier] += 1
+        players.append({
+            "jersey_number":    int(row["jersey_number"]),
+            "name":             row["player_name"],
+            "position":         pos_name or "",
+            "positional_tier":  tier,
+        })
+
+    # Fallback: if tier counts don't sum to 10 outfield players, use 4-3-3
+    if sum(tier_counts.values()) != 10:
+        tier_counts = {"def": 4, "mid": 3, "fwd": 3}
+
     return {
-        "team_id":   team_id,
-        "team_name": team_name,
-        "squad": [
-            {"jersey_number": int(row["jersey_number"]), "name": row["player_name"]}
-            for _, row in starters.iterrows()
-        ],
+        "team_id":          team_id,
+        "team_name":        team_name,
+        "squad":            players,
+        "formation_counts": tier_counts,
     }
 
 
@@ -271,11 +337,13 @@ async def step(req: StepRequest):
     )
 
     result = _engine.step(
-        action    = action,
-        context   = ctx,
-        team_id_a = req.team_id_a,
-        team_id_b = req.team_id_b,
-        alpha     = req.alpha,
+        action      = action,
+        context     = ctx,
+        team_id_a   = req.team_id_a,
+        team_id_b   = req.team_id_b,
+        alpha       = req.alpha,
+        formation_a = req.formation_a,
+        formation_b = req.formation_b,
     )
 
     return result.to_json_safe()
@@ -335,6 +403,8 @@ async def simulate_sequence(req: SequenceRequest):
         n_samples       = req.n_samples,
         noise_std       = req.noise_std,
         continuity      = max(0.0, min(req.continuity, 1.0)),
+        formation_a     = req.formation_a,
+        formation_b     = req.formation_b,
     )
 
     return {"frames": [f.to_json_safe() for f in frames]}
