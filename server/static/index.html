@@ -778,6 +778,8 @@ const S = {
   overlay: "none",      // "none" | "pressure" | "lanes" | "space"
   formationA: null,     // {def, mid, fwd} from /api/squad — null = default 4-3-3
   formationB: null,
+  identitiesA: null,   // [{slotIdx, jersey, name, tier}] — locked after first frame
+  identitiesB: null,   // propagated across frames via nearest-neighbour match
 };
 
 // ── Default formation (4-3-3) ─────────────────────────────────────────────────
@@ -1011,8 +1013,16 @@ async function explainerRun(action) {
       };
     }
 
+    // Identity tracking: init on first frame, propagate on subsequent
+    const prevPositions = S.step >= 0 ? S.frames[S.step]?.positions ?? null : null;
     S.frames.push(frame);
     S.step = S.frames.length - 1;
+    if (S.step === 0 || !S.identitiesA) {
+      initIdentities(frame);
+    } else {
+      propagateIdentities(prevPositions, frame.positions);
+    }
+    frame._identities = _snapshotIdentities();
     animateToFrame(frame);
     renderMetrics(frame.probs, frame.deltas, frame.stds, prevProbs);
     fetchCommentary(frame, S.step);
@@ -1100,6 +1110,15 @@ async function runSim() {
     const data = await res.json();
     S.frames = data.frames;
     S.step = 0;
+    // Lock identities on frame 0, propagate across the full sequence
+    if (S.frames.length > 0) {
+      initIdentities(S.frames[0]);
+      S.frames[0]._identities = _snapshotIdentities();
+      for (let i = 1; i < S.frames.length; i++) {
+        propagateIdentities(S.frames[i-1].positions, S.frames[i].positions);
+        S.frames[i]._identities = _snapshotIdentities();
+      }
+    }
     animateToFrame(S.frames[0]);
     renderMetrics(S.frames[0].probs, S.frames[0].deltas, S.frames[0].stds);
     fetchCommentary(S.frames[0], 0);
@@ -1125,6 +1144,7 @@ function seek(n) {
   if (!S.frames.length) return;
   S.step = Math.max(0, Math.min(n, S.frames.length - 1));
   const f = S.frames[S.step];
+  if (f._identities) _restoreIdentities(f._identities);
   drawFormation(f.positions, f.roles, f.mask, f.probs);
   renderMetrics(f.probs, f.deltas, f.stds);
   fetchCommentary(f, S.step);
@@ -1236,6 +1256,7 @@ function deltaClass(pts)  { return pts > 0 ? "pos" : pts < 0 ? "neg" : "flat"; }
 function clearAll() {
   S.queue = []; S.frames = []; S.step = -1; stopPlay();
   _prevPositions = null;
+  S.identitiesA = null; S.identitiesB = null;
   redrawAnalystQueue(); updateRunBtn();
   document.getElementById("playbackBar").style.display = "none";
   document.getElementById("timeline").style.display    = "none";
@@ -1409,6 +1430,93 @@ async function fetchCommentary(frame, stepIdx) {
   } catch { dot.remove(); setCommentary("", true); }
 }
 
+// ── Player identity system ────────────────────────────────────────────────────
+// Assigns generator slots to real lineup players once per sequence and
+// propagates identity across frames via nearest-neighbour matching.
+// This prevents name labels and tier clamp bands from swapping between
+// player dots during playback.
+
+const TIER_DEPTH = { gk: 0, def: 1, mid: 2, fwd: 3 };
+
+function initIdentities(frame) {
+  const { positions, roles, mask } = frame;
+
+  // Collect generator slot indices for each team
+  const slotsA = [], slotsB = [];
+  for (let i = 0; i < positions.length; i++) {
+    if (mask && mask[i]) continue;
+    (roles[i][0] > 0.5 ? slotsA : slotsB).push(i);
+  }
+  // Sort: deepest-first for both teams
+  slotsA.sort((a,b) => positions[a][0] - positions[b][0]);     // ascending x = GK first
+  slotsB.sort((a,b) => positions[b][0] - positions[a][0]);     // descending x = GK first
+
+  // Sort rosters by nominal depth, then jersey number within tier
+  function sortedRoster(squad) {
+    return [...squad].sort((a,b) => {
+      const dt = (TIER_DEPTH[a.positional_tier]??1) - (TIER_DEPTH[b.positional_tier]??1);
+      return dt !== 0 ? dt : (a.jersey_number||0) - (b.jersey_number||0);
+    });
+  }
+
+  const rA = sortedRoster(S.squadA);
+  const rB = sortedRoster(S.squadB);
+
+  S.identitiesA = slotsA.map((slotIdx, rank) => ({
+    slotIdx,
+    jersey: rA[rank]?.jersey_number  ?? (rank+1),
+    name:   rA[rank]?.name           ?? null,
+    tier:   rA[rank]?.positional_tier ?? _defaultTier(rank),
+  }));
+  S.identitiesB = slotsB.map((slotIdx, rank) => ({
+    slotIdx,
+    jersey: rB[rank]?.jersey_number  ?? (rank+1),
+    name:   rB[rank]?.name           ?? null,
+    tier:   rB[rank]?.positional_tier ?? _defaultTier(rank),
+  }));
+}
+
+function _defaultTier(rank) {
+  return rank===0?"gk":rank<=4?"def":rank<=7?"mid":"fwd";
+}
+
+function propagateIdentities(prevPositions, newPositions) {
+  if (!S.identitiesA || !S.identitiesB || !prevPositions) return;
+
+  function matchTeam(identities, newSlotRange) {
+    const used = new Set();
+    return identities.map(id => {
+      const prev = prevPositions[id.slotIdx];
+      if (!prev) return id;
+      let bestSlot = id.slotIdx, bestDist = Infinity;
+      for (let j = newSlotRange[0]; j < newSlotRange[1] && j < newPositions.length; j++) {
+        if (used.has(j)) continue;
+        const d = Math.hypot(prev[0]-newPositions[j][0], prev[1]-newPositions[j][1]);
+        if (d < bestDist) { bestDist = d; bestSlot = j; }
+      }
+      used.add(bestSlot);
+      return { ...id, slotIdx: bestSlot };
+    });
+  }
+
+  const n = newPositions.length;
+  S.identitiesA = matchTeam(S.identitiesA, [0,  Math.min(11, n)]);
+  S.identitiesB = matchTeam(S.identitiesB, [11, Math.min(22, n)]);
+}
+
+function _snapshotIdentities() {
+  return {
+    a: S.identitiesA?.map(id=>({...id})) ?? null,
+    b: S.identitiesB?.map(id=>({...id})) ?? null,
+  };
+}
+
+function _restoreIdentities(snap) {
+  if (!snap) return;
+  S.identitiesA = snap.a;
+  S.identitiesB = snap.b;
+}
+
 // ── Canvas setup ───────────────────────────────────────────────────────────────
 let CW = 800, CH = 520;
 function resizeCanvas() {
@@ -1484,17 +1592,31 @@ function drawThreatOverlay(ctx, positions, roles, mask, pShot) {
 function drawPlayers(ctx, positions, roles, mask, probs) {
   const R = Math.max(9, Math.round(CW*0.013));
   const ACTOR_R = Math.round(R * 1.25);
-  const teamA=[],teamB=[];
-  for (let i=0; i<positions.length; i++) {
-    if (mask && mask[i]) continue;
-    (roles[i][0]>0.5?teamA:teamB).push(i);
-  }
-  teamA.sort((a,b)=>positions[a][0]-positions[b][0]);
-  teamB.sort((a,b)=>positions[b][0]-positions[a][0]);
-  const labels={}; teamA.forEach((idx,n)=>labels[idx]=n+1); teamB.forEach((idx,n)=>labels[idx]=n+1);
 
-  const nameA = rank => (S.squadA[rank-1]||{}).name||null;
-  const nameB = rank => (S.squadB[rank-1]||{}).name||null;
+  // Build label + name maps.
+  // Prefer locked identities (stable across frames); fall back to x-sort
+  // only for the initial default formation before any sequence has run.
+  const labelMap = {}, nameMap = {};
+  if (S.identitiesA && S.identitiesB) {
+    for (const id of [...S.identitiesA, ...S.identitiesB]) {
+      if (id.slotIdx != null) { labelMap[id.slotIdx] = id.jersey; nameMap[id.slotIdx] = id.name; }
+    }
+  } else {
+    const teamA=[],teamB=[];
+    for (let i=0; i<positions.length; i++) {
+      if (mask&&mask[i]) continue;
+      (roles[i][0]>0.5?teamA:teamB).push(i);
+    }
+    teamA.sort((a,b)=>positions[a][0]-positions[b][0]);
+    teamB.sort((a,b)=>positions[b][0]-positions[a][0]);
+    teamA.forEach((idx,n)=>{ labelMap[idx]=n+1; });
+    teamB.forEach((idx,n)=>{ labelMap[idx]=n+1; });
+    // name fallback: jersey rank → squad array
+    const nameA = rank => (S.squadA[rank-1]||{}).name||null;
+    const nameB = rank => (S.squadB[rank-1]||{}).name||null;
+    teamA.forEach((idx,n) => { nameMap[idx] = nameA(n+1); });
+    teamB.forEach((idx,n) => { nameMap[idx] = nameB(n+1); });
+  }
 
   function drawPlayerCircle(i, isActor) {
     const x=px(positions[i][0]), y=py(positions[i][1]);
@@ -1519,15 +1641,15 @@ function drawPlayers(ctx, positions, roles, mask, probs) {
       ctx.fillStyle="#fff"; ctx.fill();
     }
 
-    const num=labels[i];
-    const fs=Math.max(7,Math.round(r*0.85));
+    const num = labelMap[i];
+    const fs = Math.max(7,Math.round(r*0.85));
     ctx.font=`bold ${fs}px monospace`; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillStyle = isActor?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.9)";
     ctx.fillText(num,x,y);
 
     // Name label — only drawn in pass 2 (actor), so nothing else paints over it
     if (isActor && num) {
-      const playerName = isMate ? nameA(num) : nameB(num);
+      const playerName = nameMap[i];
       const labelText  = playerName ? playerName.split(" ").pop() : `#${num}`;
       ctx.font=`500 ${Math.max(9,Math.round(r*0.75))}px ${getComputedStyle(document.documentElement).getPropertyValue('--font')}`;
       const lw = ctx.measureText(labelText).width + 10;
