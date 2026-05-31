@@ -199,8 +199,9 @@ def main():
         )
 
         c      = engine._encode_condition(z_A, z_B, ctx)
-        gen_xy = engine.generator.generate(
-            engine.roles, c, engine.mask, n_steps=GEN_STEPS
+        gen_xy = engine._debias_positions(
+            engine.generator.generate(engine.roles, c, engine.mask, n_steps=GEN_STEPS),
+            ctx,
         )  # (1, N, 2)
 
         # Build generated positions tensor in the same format as real
