@@ -502,3 +502,87 @@ async def commentary(req: CommentaryRequest):
         return {"commentary": text, "available": True}
     except Exception as e:
         return {"commentary": "", "available": False, "error": str(e)}
+
+
+# ── Sequence analysis ──────────────────────────────────────────────────────────
+
+class SequenceFrameSummary(BaseModel):
+    action:           str
+    zone:             int   = 1
+    minute:           float = 45.0
+    score_diff:       float = 0.0
+    p_shot:           float = 0.0
+    p_shot_delta:     float | None = None
+    p_advance:        float | None = None
+    defense_response: str   = ""
+
+
+class AnalyzeSequenceRequest(BaseModel):
+    team_name_a: str
+    team_name_b: str
+    frames:      list[SequenceFrameSummary]
+    score_diff:  float = 0.0
+    minute:      float = 45.0
+
+
+@app.post("/api/analyze_sequence")
+async def analyze_sequence(req: AnalyzeSequenceRequest):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"analysis": "", "available": False}
+    if not req.frames:
+        raise HTTPException(400, "No frames to analyze")
+
+    zone_names = {0: "own half", 1: "midfield", 2: "attacking third", 3: "penalty area"}
+    action_labels = {
+        "ADVANCE": "advance", "THROUGH_BALL": "through ball", "DRIBBLE": "dribble",
+        "SHOOT": "shoot", "CROSS": "cross", "SWITCH_LEFT": "switch left",
+        "SWITCH_RIGHT": "switch right", "HOLD": "keep possession",
+        "KEEPER_BALL": "play out from back", "PRESS": "high press", "LOW_BLOCK": "low block",
+    }
+
+    steps = []
+    for i, f in enumerate(req.frames, 1):
+        z = zone_names.get(f.zone, f"zone {f.zone}")
+        a = action_labels.get(f.action, f.action.lower())
+        delta_str = ""
+        if f.p_shot_delta is not None:
+            sign = "+" if f.p_shot_delta >= 0 else ""
+            delta_str = f" ({sign}{f.p_shot_delta*100:.0f}pp)"
+        steps.append(f"  {i}. {a} in {z} → shot prob {f.p_shot*100:.0f}%{delta_str}")
+
+    score_str = (
+        "level" if req.score_diff == 0
+        else f"up {int(abs(req.score_diff))}" if req.score_diff > 0
+        else f"down {int(abs(req.score_diff))}"
+    )
+
+    final_p    = req.frames[-1].p_shot
+    peak_frame = max(req.frames, key=lambda f: f.p_shot)
+    peak_step  = req.frames.index(peak_frame) + 1
+
+    prompt = (
+        f"You are a football analyst. Write a 3-sentence tactical briefing — no bullet points, "
+        f"no headers, no markdown. Be specific: name the actions, describe the build-up pattern, "
+        f"and say whether the sequence was effective.\n\n"
+        f"Match: {req.team_name_a} vs {req.team_name_b}, "
+        f"minute {req.minute:.0f}, score {score_str}.\n"
+        f"{req.team_name_a} played this sequence:\n"
+        + "\n".join(steps) +
+        f"\n\nFinal shot probability: {final_p*100:.0f}%. "
+        f"Peak threat at step {peak_step} ({peak_frame.p_shot*100:.0f}%).\n\n"
+        f"Briefing:"
+    )
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model      = "claude-haiku-4-5-20251001",
+            max_tokens = 220,
+            messages   = [{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+        return {"analysis": text, "available": True}
+    except Exception as e:
+        return {"analysis": "", "available": False, "error": str(e)}

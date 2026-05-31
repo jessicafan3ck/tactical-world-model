@@ -396,6 +396,28 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
   padding: 5px 12px; font-size: 11px; cursor: pointer; font-family: var(--font);
 }
 
+/* ── Overlay toggles ─────────────────────────────────────────────────────── */
+.overlay-row { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+.overlay-btn {
+  background: var(--surface2); border: 0.5px solid var(--border);
+  color: var(--muted); padding: 2px 7px; border-radius: 3px;
+  font-size: 10px; cursor: pointer; font-family: var(--font);
+  transition: color 0.12s, border-color 0.12s;
+}
+.overlay-btn:hover:not(.active) { color: var(--text); }
+.overlay-btn.active { color: var(--blue); border-color: var(--blue); }
+
+/* ── Analysis panel ──────────────────────────────────────────────────────── */
+.analyze-btn {
+  flex-shrink: 0; background: transparent;
+  border: 0.5px solid var(--purple); color: var(--purple);
+  border-radius: 4px; padding: 3px 9px;
+  font-size: 11px; font-family: var(--font); cursor: pointer;
+  white-space: nowrap;
+}
+.analyze-btn:hover { background: rgba(188,140,255,0.08); }
+.analyze-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
 /* ── Responsive Presenter ────────────────────────────────────────────────── */
 [data-mode="presenter"] header { padding: 6px 14px; }
 [data-mode="presenter"] .metric-value { font-size: 28px; }
@@ -623,7 +645,14 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
       <div class="legend-item"><span class="legend-dot a"></span><span id="legendA">Team A</span></div>
       <div class="legend-item"><span class="legend-dot b"></span><span id="legendB">Team B</span></div>
       <div class="legend-item"><span class="legend-dot carrier"></span>Player on the ball</div>
-      <div class="legend-item"><span class="legend-threat"></span>Threat space</div>
+      <div class="legend-item"><span class="legend-threat"></span>Threat</div>
+      <div class="overlay-row">
+        <span style="font-size:10px;color:var(--muted);margin-right:3px">Overlay:</span>
+        <button class="overlay-btn active" data-ov="none"     onclick="setOverlay('none')">Off</button>
+        <button class="overlay-btn"        data-ov="pressure" onclick="setOverlay('pressure')" title="Defensive pressure heatmap">Pressure</button>
+        <button class="overlay-btn"        data-ov="lanes"    onclick="setOverlay('lanes')"    title="Passing lane openness">Lanes</button>
+        <button class="overlay-btn"        data-ov="space"    onclick="setOverlay('space')"    title="Territorial dominance">Space</button>
+      </div>
     </div>
 
     <!-- Metrics -->
@@ -664,6 +693,10 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
       <span class="commentary-text muted" id="commentaryText">
         Pick an action to see how the play reshapes.
       </span>
+      <button class="analyze-btn" id="analyzeBtn" onclick="analyzeSequence()"
+              style="display:none" title="Ask the model to describe the full sequence as a tactical narrative">
+        Analyze sequence
+      </button>
     </div>
 
     <!-- Playback -->
@@ -742,6 +775,7 @@ const S = {
   hints: {},            // action → p_shot_delta (preloaded)
   prevProbs: null,      // for delta calculation in explainer mode
   commentaryEnabled: true,
+  overlay: "none",      // "none" | "pressure" | "lanes" | "space"
 };
 
 // ── Default formation (4-3-3) ─────────────────────────────────────────────────
@@ -978,6 +1012,7 @@ async function explainerRun(action) {
     preloadHints();
     showPlaybackControls();
     updateSeqQueue();
+    showAnalyzeBtn();
   } catch(e) {
     console.error(e);
   } finally {
@@ -1062,6 +1097,7 @@ async function runSim() {
     showPlaybackControls();
     drawTimelineStrip(S.frames);
     updateControls();
+    showAnalyzeBtn();
   } catch(e) { alert("Simulation failed: " + e.message); }
   finally { showLoader(false); }
 }
@@ -1199,6 +1235,7 @@ function clearAll() {
   setCommentary("Pick an action to see how the play reshapes.", true);
   drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
   updateSeqQueue();
+  showAnalyzeBtn();
 }
 
 // ── Suggest (Analyst) ─────────────────────────────────────────────────────────
@@ -1229,6 +1266,61 @@ async function fetchSuggest() {
         </div>`;
       }).join("");
   } catch(e) { list.innerHTML = `<div style="color:var(--red);font-size:10px">${e.message}</div>`; }
+}
+
+// ── Sequence analysis ─────────────────────────────────────────────────────────
+
+function showAnalyzeBtn() {
+  const btn = document.getElementById("analyzeBtn");
+  if (btn) btn.style.display = S.frames.length >= 2 ? "inline-block" : "none";
+}
+
+async function analyzeSequence() {
+  if (!S.teamA || !S.teamB || S.frames.length < 2) return;
+  const btn = document.getElementById("analyzeBtn");
+  btn.disabled = true; btn.textContent = "Analyzing…";
+
+  const frameSummaries = S.frames.map(f => ({
+    action:           f.action,
+    zone:             f.context?.zone             ?? 1,
+    minute:           f.context?.minute           ?? 45,
+    score_diff:       f.context?.score_diff       ?? 0,
+    p_shot:           f.probs.p_shot,
+    p_shot_delta:     f.deltas?.p_shot            ?? null,
+    p_advance:        f.probs.p_advance           ?? null,
+    defense_response: f.context?.defense_response ?? "",
+  }));
+
+  const dot = document.createElement("span");
+  dot.className = "commentary-dot";
+  document.getElementById("commentaryBar").appendChild(dot);
+  setCommentary("", false);
+
+  try {
+    const res = await fetch("/api/analyze_sequence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        team_name_a: S.teamNameA,
+        team_name_b: S.teamNameB,
+        frames:      frameSummaries,
+        score_diff:  frameSummaries[0].score_diff,
+        minute:      frameSummaries[0].minute,
+      }),
+    });
+    const data = await res.json();
+    dot.remove();
+    if (data.available && data.analysis) {
+      setCommentary(data.analysis);
+    } else {
+      setCommentary("Set ANTHROPIC_API_KEY in .env to enable sequence analysis.", true);
+    }
+  } catch {
+    dot.remove();
+    setCommentary("Analysis failed.", true);
+  } finally {
+    btn.disabled = false; btn.textContent = "Analyze sequence";
+  }
 }
 
 // ── Commentary ────────────────────────────────────────────────────────────────
@@ -1392,57 +1484,63 @@ function drawPlayers(ctx, positions, roles, mask, probs) {
   teamB.sort((a,b)=>positions[b][0]-positions[a][0]);
   const labels={}; teamA.forEach((idx,n)=>labels[idx]=n+1); teamB.forEach((idx,n)=>labels[idx]=n+1);
 
-  // Name lookup
   const nameA = rank => (S.squadA[rank-1]||{}).name||null;
   const nameB = rank => (S.squadB[rank-1]||{}).name||null;
 
-  for (let i=0; i<positions.length; i++) {
-    if (mask && mask[i]) continue;
+  function drawPlayerCircle(i, isActor) {
     const x=px(positions[i][0]), y=py(positions[i][1]);
-    const isMate=roles[i][0]>0.5, isActor=roles[i][1]>0.5;
+    const isMate=roles[i][0]>0.5;
     const r = isActor ? ACTOR_R : R;
     const color = isActor ? "#f0c040" : isMate ? "#58a6ff" : "#f85149";
 
-    // Shadow
     ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = 6;
     ctx.beginPath(); ctx.arc(x,y,r,0,2*Math.PI);
     ctx.fillStyle = color; ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Border
     ctx.strokeStyle = isActor ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.35)";
     ctx.lineWidth = isActor ? 2 : 1;
     ctx.stroke();
 
-    // Outer ring for ball carrier
     if (isActor) {
       ctx.beginPath(); ctx.arc(x,y,r+5,0,2*Math.PI);
       ctx.strokeStyle = "rgba(240,192,64,0.55)"; ctx.lineWidth=1.5; ctx.stroke();
-      // Ball (small circle)
       const bx = x + r*0.9, by = y - r*0.9;
       ctx.beginPath(); ctx.arc(bx,by,3,0,2*Math.PI);
       ctx.fillStyle="#fff"; ctx.fill();
     }
 
-    // Shirt number
     const num=labels[i];
     const fs=Math.max(7,Math.round(r*0.85));
     ctx.font=`bold ${fs}px monospace`; ctx.textAlign="center"; ctx.textBaseline="middle";
     ctx.fillStyle = isActor?"rgba(0,0,0,0.85)":"rgba(255,255,255,0.9)";
     ctx.fillText(num,x,y);
 
-    // Name label for ball carrier
+    // Name label — only drawn in pass 2 (actor), so nothing else paints over it
     if (isActor && num) {
       const playerName = isMate ? nameA(num) : nameB(num);
       const labelText  = playerName ? playerName.split(" ").pop() : `#${num}`;
+      ctx.font=`500 ${Math.max(9,Math.round(r*0.75))}px ${getComputedStyle(document.documentElement).getPropertyValue('--font')}`;
       const lw = ctx.measureText(labelText).width + 10;
       const lx = x - lw/2, ly = y - r - 16;
-      ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.beginPath();
+      ctx.fillStyle = "rgba(0,0,0,0.82)"; ctx.beginPath();
       roundRect(ctx,lx,ly,lw,14,3); ctx.fill();
-      ctx.font=`500 ${Math.max(9,Math.round(r*0.75))}px ${getComputedStyle(document.documentElement).getPropertyValue('--font')}`;
       ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.fillStyle="#fff"; ctx.fillText(labelText, x, ly+7);
     }
+  }
+
+  // Pass 1: all non-actor players
+  for (let i=0; i<positions.length; i++) {
+    if (mask && mask[i]) continue;
+    if (roles[i][1]>0.5) continue;
+    drawPlayerCircle(i, false);
+  }
+  // Pass 2: actor on top — label can never be covered
+  for (let i=0; i<positions.length; i++) {
+    if (mask && mask[i]) continue;
+    if (roles[i][1]<=0.5) continue;
+    drawPlayerCircle(i, true);
   }
   ctx.textBaseline="alphabetic";
 }
@@ -1460,7 +1558,144 @@ function drawFormation(positions, roles, mask, probs) {
   const ctx=canvas.getContext("2d");
   drawPitchSurface(ctx);
   if (probs) drawThreatOverlay(ctx,positions,roles,mask,probs.p_shot);
+  if      (S.overlay === "pressure") drawPressureOverlay(ctx,positions,roles,mask);
+  else if (S.overlay === "lanes")    drawPassingLanes(ctx,positions,roles,mask);
+  else if (S.overlay === "space")    drawSpaceMap(ctx,positions,roles,mask);
   drawPlayers(ctx,positions,roles,mask,probs);
+}
+
+function setOverlay(type) {
+  S.overlay = type;
+  document.querySelectorAll(".overlay-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.ov === type));
+  const f = S.step >= 0 ? S.frames[S.step] : null;
+  if (f) drawFormation(f.positions, f.roles, f.mask, f.probs);
+  else   drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
+}
+
+// ── Analytical overlays ────────────────────────────────────────────────────────
+
+function drawPressureOverlay(ctx, positions, roles, mask) {
+  // Heatmap of defensive pressure: each cell scored by defender proximity
+  const gx = 20, gy = 13;
+  for (let ix = 0; ix < gx; ix++) {
+    for (let iy = 0; iy < gy; iy++) {
+      const cx = (ix + 0.5) / gx, cy = (iy + 0.5) / gy;
+      let pressure = 0;
+      for (let i = 0; i < positions.length; i++) {
+        if (mask && mask[i]) continue;
+        if (roles[i][0] > 0.5) continue; // only Team B (defenders)
+        const d = Math.hypot(positions[i][0] - cx, positions[i][1] - cy);
+        pressure += Math.max(0, 1 - d / 0.14);
+      }
+      if (pressure < 0.05) continue;
+      const alpha = Math.min(pressure * 0.18, 0.5);
+      ctx.fillStyle = `rgba(248,81,73,${alpha})`;
+      ctx.fillRect(px(ix/gx), py(iy/gy), px(1/gx)+1, py(1/gy)+1);
+    }
+  }
+  // Legend label
+  ctx.font = `9px monospace`; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(248,81,73,0.7)";
+  ctx.fillText("Defensive pressure", px(0.02), py(0.04));
+}
+
+function drawPassingLanes(ctx, positions, roles, mask) {
+  // Find actor (ball carrier)
+  let actorIdx = null;
+  for (let i = 0; i < roles.length; i++) {
+    if ((!mask || !mask[i]) && roles[i][1] > 0.5) { actorIdx = i; break; }
+  }
+  if (actorIdx === null) return;
+
+  const [ax, ay] = positions[actorIdx];
+  const defenders = [], teammates = [];
+  for (let i = 0; i < positions.length; i++) {
+    if (mask && mask[i]) continue;
+    if (i === actorIdx) continue;
+    (roles[i][0] > 0.5 ? teammates : defenders).push(i);
+  }
+
+  for (const tm of teammates) {
+    const [tx, ty] = positions[tm];
+    // Count defenders whose projection onto the lane falls within the segment
+    let blocked = 0;
+    const lenSq = (tx-ax)**2 + (ty-ay)**2;
+    for (const def of defenders) {
+      const [dx, dy] = positions[def];
+      const t = lenSq < 1e-6 ? 0 : Math.max(0, Math.min(1,
+        ((dx-ax)*(tx-ax) + (dy-ay)*(ty-ay)) / lenSq));
+      const distToLane = Math.hypot(dx - (ax+t*(tx-ax)), dy - (ay+t*(ty-ay)));
+      if (distToLane < 0.07) blocked++;
+    }
+
+    const open    = blocked === 0;
+    const partial = blocked === 1;
+    const [r,g,b] = open ? [63,185,80] : partial ? [240,192,64] : [248,81,73];
+    const alpha   = open ? 0.75 : partial ? 0.45 : 0.2;
+    const lw      = open ? 2.5 : 1.5;
+
+    ctx.beginPath();
+    ctx.moveTo(px(ax), py(ay));
+    ctx.lineTo(px(tx), py(ty));
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.lineWidth = lw;
+    ctx.setLineDash(open ? [] : [4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Endpoint dot on teammate
+    ctx.beginPath();
+    ctx.arc(px(tx), py(ty), 4, 0, 2*Math.PI);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha * 0.8})`;
+    ctx.fill();
+  }
+
+  ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(63,185,80,0.7)";
+  ctx.fillText("Open lane  ", px(0.02), py(0.04));
+  ctx.fillStyle = "rgba(248,81,73,0.7)";
+  ctx.fillText("            Blocked", px(0.02), py(0.04));
+
+  // Cleaner: draw a small legend
+  const ly = py(0.04);
+  ctx.beginPath(); ctx.moveTo(px(0.02), ly+4); ctx.lineTo(px(0.06), ly+4);
+  ctx.strokeStyle="rgba(63,185,80,0.7)"; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,0.55)"; ctx.font="9px monospace";
+  ctx.fillText("open", px(0.065), py(0.04));
+
+  ctx.beginPath(); ctx.moveTo(px(0.10), ly+4); ctx.lineTo(px(0.14), ly+4);
+  ctx.strokeStyle="rgba(248,81,73,0.6)"; ctx.lineWidth=1.5;
+  ctx.setLineDash([3,2]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillText("blocked", px(0.145), py(0.04));
+}
+
+function drawSpaceMap(ctx, positions, roles, mask) {
+  // Vertical strips: color by which team dominates (more players in that band)
+  const strips = 18;
+  for (let s = 0; s < strips; s++) {
+    const x1 = s / strips, x2 = (s+1) / strips;
+    let cA = 0, cB = 0;
+    for (let i = 0; i < positions.length; i++) {
+      if (mask && mask[i]) continue;
+      const xp = positions[i][0];
+      if (xp >= x1 && xp < x2) {
+        if (roles[i][0] > 0.5) cA++; else cB++;
+      }
+    }
+    if (cA + cB === 0) continue;
+    const dom = (cA - cB) / (cA + cB);
+    if (Math.abs(dom) < 0.15) continue; // contested — leave transparent
+    const alpha = Math.min(Math.abs(dom) * 0.22, 0.28);
+    ctx.fillStyle = dom > 0
+      ? `rgba(88,166,255,${alpha})`   // Team A (blue)
+      : `rgba(248,81,73,${alpha})`;   // Team B (red)
+    ctx.fillRect(px(x1), 0, px(x2-x1)+1, CH);
+  }
+
+  ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(88,166,255,0.65)";
+  ctx.fillText("Space map — blue: Team A dominates, red: Team B", px(0.02), py(0.04));
 }
 
 // ── Animated frame transition ─────────────────────────────────────────────────
