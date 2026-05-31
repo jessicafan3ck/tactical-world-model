@@ -167,6 +167,18 @@ class ConditionalEngine:
         self.roles = roles.to(self.device)
         self.mask  = torch.zeros(1, N, dtype=torch.bool, device=self.device)
 
+        # Load per-zone/phase x-position debias corrections if available
+        import json as _json
+        _debias_path = Path(__file__).parent.parent / "data" / "results" / "generator_debias.json"
+        self._debias: dict[tuple[int, int], float] = {}
+        if _debias_path.exists():
+            with open(_debias_path) as _f:
+                _db = _json.load(_f)
+            for _key, _val in _db.get("corrections", {}).items():
+                _z, _p = (int(x) for x in _key.split("_"))
+                self._debias[(_z, _p)] = float(_val["dx"])
+            print(f"  Generator debias loaded: {len(self._debias)} (zone, phase) corrections")
+
         from model.action_encoder import Action
         self._RESPONSE_MAP = {
             Action.ADVANCE:      Action.LOW_BLOCK,
@@ -222,8 +234,9 @@ class ConditionalEngine:
 
         # ── Generate freeze frame under modified fingerprint ───────────────────
         c = self._encode_condition(z_A_mod, z_B, context)
-        gen_xy = self.generator.generate(
-            self.roles, c, self.mask, n_steps=gen_steps
+        gen_xy = self._debias_positions(
+            self.generator.generate(self.roles, c, self.mask, n_steps=gen_steps),
+            context,
         )  # (1, N, 2)
 
         # ── Evaluate SSE on generated frame ───────────────────────────────────
@@ -325,10 +338,11 @@ class ConditionalEngine:
                     noise   = torch.randn_like(z_A_mod) * noise_std * norm_A
                     z_noisy = (z_A_mod + noise) * (norm_A / (z_A_mod + noise).norm().clamp(min=1e-8))
                     c_n     = self._encode_condition(z_noisy, z_B_mod, ctx)
-                    xy_n    = self.generator.generate(
-                        self.roles, c_n, self.mask, n_steps=gen_steps,
-                        x_prior=x_prior, max_delta_per_step=max_delta,
-                    )
+                    xy_n    = self._debias_positions(
+                        self.generator.generate(
+                            self.roles, c_n, self.mask, n_steps=gen_steps,
+                            x_prior=x_prior, max_delta_per_step=max_delta,
+                        ), ctx)
                     p_n     = self._run_sse_probs(z_noisy, z_B_mod, ctx)
                     all_xy.append(xy_n)
                     all_p.append([p_n.p_advance, p_n.p_final_third, p_n.p_shot])
@@ -347,10 +361,11 @@ class ConditionalEngine:
                 )
             else:
                 c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
-                gen_xy = self.generator.generate(
-                    self.roles, c, self.mask, n_steps=gen_steps,
-                    x_prior=x_prior, max_delta_per_step=max_delta,
-                )
+                gen_xy = self._debias_positions(
+                    self.generator.generate(
+                        self.roles, c, self.mask, n_steps=gen_steps,
+                        x_prior=x_prior, max_delta_per_step=max_delta,
+                    ), ctx)
                 probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
                 stds   = None
 
@@ -472,16 +487,47 @@ class ConditionalEngine:
     # ── Action suggestion ──────────────────────────────────────────────────────
 
     @torch.no_grad()
+    def get_legal_actions(self, context: "MatchContext") -> frozenset:
+        """
+        Return the set of Action members that are legal for the possessing team.
+
+        The encoder learned z-transformations from real data without modelling
+        action preconditions, so some high-Δz actions are illegal in certain
+        contexts (e.g. PRESS when you have the ball; KEEPER_BALL from the
+        attacking third).  This mask enforces the obvious preconditions.
+        """
+        from model.action_encoder import Action
+
+        # Require the opponent to have the ball — illegal for the possessing team
+        illegal = {Action.PRESS, Action.LOW_BLOCK}
+
+        # Goalkeeper distribution: own half, controlled play, not losing
+        if context.zone >= 2 or context.phase == 1 or context.score_diff < 0:
+            illegal.add(Action.KEEPER_BALL)
+
+        # Shot attempts: too far from goal in own half
+        if context.zone == 0:
+            illegal.add(Action.SHOOT)
+
+        return frozenset(a for a in Action if a not in illegal)
+
     def suggest_action(self,
                        context:    "MatchContext",
                        team_id_a:  int,
                        team_id_b:  int) -> list[dict]:
         """
-        Evaluate all 11 actions from the current state and return them ranked
+        Evaluate legal actions from the current state and return them ranked
         by ΔP(shot) — highest first.  Used by the frontend "What next?" panel
         and the pre-match sequence optimiser.
+
+        Only contextually legal actions are included (see get_legal_actions).
+        The result reflects what the encoder *expects* from each action, not a
+        prescriptive recommendation — the encoder has no legality model, so
+        illegal actions are filtered here, not in the learned operator.
         """
         from model.action_encoder import ACTION_LABELS, Action
+
+        legal = self.get_legal_actions(context)
 
         z_A = self.fingerprints.get(team_id_a, self.mean_fp).to(self.device)
         z_B = self.fingerprints.get(team_id_b, self.mean_fp).to(self.device)
@@ -491,6 +537,8 @@ class ConditionalEngine:
 
         rows = []
         for action in Action:
+            if action not in legal:
+                continue
             z_mod = self._apply_action(z_A, action, context, 1.0).to(self.device)
             z_mod = z_mod * (norm_A / z_mod.norm().clamp(min=1e-8))
             p     = self._run_sse_probs(z_mod, z_B, context)
@@ -509,6 +557,29 @@ class ConditionalEngine:
         return rows
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    def _debias_positions(self, gen_xy: torch.Tensor,
+                          context: "MatchContext") -> torch.Tensor:
+        """
+        Apply per-(zone, phase) x-position correction to teammate positions.
+
+        gen_xy : (1, N, 2) generated positions (normalised [0,1])
+        Returns the same shape with teammate x shifted by Δx, clamped to [0,1].
+        The phase encoding matches the debias fit: 0=open/counter, 2=set_piece.
+        """
+        if not self._debias:
+            return gen_xy
+        # Map engine phase to debias phase key: 0=open_play, 1=counter, 2=set_piece+
+        phase_key = 2 if context.phase >= 2 else context.phase
+        dx = self._debias.get((min(context.zone, 3), phase_key), 0.0)
+        if abs(dx) < 1e-6:
+            return gen_xy
+        # Teammate mask from roles: (1, N, 2) → is_teammate = roles[:, :, 0] > 0.5
+        teammate = (self.roles[:, :, 0] > 0.5).unsqueeze(-1)  # (1, N, 1)
+        x_shift  = torch.zeros_like(gen_xy)
+        x_shift[:, :, 0] = dx   # shift only x-channel
+        corrected = gen_xy + teammate.float() * x_shift
+        return corrected.clamp(0.0, 1.0)
 
     def _ctx_tensor(self, ctx: "MatchContext") -> torch.Tensor:
         """Build the (1, 3) context tensor [zone/3, phase_open, phase_counter]."""
@@ -595,8 +666,9 @@ class ConditionalEngine:
         We generate a quick low-step frame so the SSE sees realistic positions.
         """
         c      = self._encode_condition(z_A, z_B, context)
-        gen_xy = self.generator.generate(
-            self.roles, c, self.mask, n_steps=10   # fast, 10-step
+        gen_xy = self._debias_positions(
+            self.generator.generate(self.roles, c, self.mask, n_steps=10),
+            context,
         )  # (1, N, 2)
 
         # Reconstruct full position tensor (x, y, is_teammate, is_actor)
