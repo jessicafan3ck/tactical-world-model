@@ -965,7 +965,6 @@ async function fetchSquad(teamId, side) {
 // a real generator frame so the pitch opens on a formation-realistic snapshot.
 async function fetchOpeningState() {
   if (!S.teamA || !S.teamB) return;
-  // Don't overwrite an in-progress sequence
   if (S.frames.length > 0) return;
   try {
     const res = await fetch("/api/opening_state", {
@@ -979,8 +978,13 @@ async function fetchOpeningState() {
     });
     if (!res.ok) return;
     const frame = await res.json();
-    initIdentities(frame);
-    drawFormation(frame.positions, frame.roles, frame.mask, frame.probs);
+    // Draw the clean 4-3-3 layout (not the generator's mid-match scatter),
+    // but populate probs from the real team fingerprints.
+    // Store the generated positions as the seed for the first step's continuity.
+    S._openingPositions = frame.positions;
+    const defFrame = { positions: DEF_POSITIONS, roles: DEF_ROLES, mask: DEF_MASK };
+    initIdentities(defFrame);
+    drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, frame.probs);
     updateLegalActions();
   } catch {}
 }
@@ -1110,6 +1114,7 @@ async function explainerRun(action) {
     // to continuity=0.15 (15% of pitch per step).  Without this each frame is an
     // independent sample; mean jump ~0.4 in [0,1] space breaks NN identity tracking.
     const prevFrame = S.step >= 0 ? S.frames[S.step] : null;
+    const prevPositions = prevFrame?.positions ?? S._openingPositions ?? null;
     const res = await fetch("/api/step", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1117,8 +1122,8 @@ async function explainerRun(action) {
         action, team_id_a: +S.teamA, team_id_b: +S.teamB,
         context: currentCtx(), alpha: 1.0,
         formation_a: S.formationA, formation_b: S.formationB,
-        continuity:     prevFrame ? S.continuity : 0.0,
-        prev_positions: prevFrame?.positions ?? null,
+        continuity:     prevPositions ? S.continuity : 0.0,
+        prev_positions: prevPositions,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
@@ -1398,6 +1403,7 @@ function deltaClass(pts)  { return pts > 0 ? "pos" : pts < 0 ? "neg" : "flat"; }
 function clearAll() {
   S.queue = []; S.frames = []; S.step = -1; stopPlay();
   _prevPositions = null;
+  S._openingPositions = null;
   S.identitiesA = null; S.identitiesB = null;
   redrawAnalystQueue(); updateRunBtn();
   document.getElementById("playbackBar").style.display = "none";
