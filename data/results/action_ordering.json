@@ -1,0 +1,620 @@
+{
+  "global_sign_agreement": 0.4706,
+  "n_pairs_total": 51,
+  "n_buckets": 3,
+  "min_count": 15,
+  "verdict": "FAIL \u2014 model does not reliably order action effects",
+  "caveat": "Action choice is non-random (selection bias). Matching on (zone, phase) controls observable state only. Sign-agreement is informative, not a causal claim.",
+  "buckets": [
+    {
+      "zone": 1,
+      "phase": 0,
+      "zone_name": "Middle \u2153",
+      "phase_name": "Open play",
+      "n_possessions": 22861,
+      "actions_ranked": [
+        "ADVANCE",
+        "CROSS",
+        "DRIBBLE",
+        "HOLD",
+        "SWITCH_LEFT",
+        "SWITCH_RIGHT",
+        "THROUGH_BALL"
+      ],
+      "empirical_s3_rates": {
+        "ADVANCE": 0.0363,
+        "CROSS": 0.041,
+        "DRIBBLE": 0.0238,
+        "HOLD": 0.0357,
+        "SWITCH_LEFT": 0.0449,
+        "SWITCH_RIGHT": 0.0256,
+        "THROUGH_BALL": 0.0
+      },
+      "empirical_shot_rates": {
+        "ADVANCE": 0.0029,
+        "CROSS": 0.0082,
+        "DRIBBLE": 0.0,
+        "HOLD": 0.0058,
+        "SWITCH_LEFT": 0.0064,
+        "SWITCH_RIGHT": 0.0,
+        "THROUGH_BALL": 0.0
+      },
+      "model_deltas": {
+        "ADVANCE": -0.001,
+        "CROSS": -0.001,
+        "DRIBBLE": 0.002,
+        "HOLD": 0.002,
+        "SWITCH_LEFT": -0.002,
+        "SWITCH_RIGHT": -0.0,
+        "THROUGH_BALL": -0.001
+      },
+      "kendall_tau_s3": -0.4763,
+      "kendall_tau_shot": -0.343,
+      "tau_ci_90": [
+        -0.9701,
+        0.2801
+      ],
+      "sign_agreement": 0.2857,
+      "n_pairs": 21,
+      "pairs": [
+        {
+          "action_a": "ADVANCE",
+          "action_b": "CROSS",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.041,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.0238,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.0357,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.0449,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.002,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.0256,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.0,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.0363,
+          "emp_rate_b": 0.0,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.041,
+          "emp_rate_b": 0.0238,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.041,
+          "emp_rate_b": 0.0357,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.041,
+          "emp_rate_b": 0.0449,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.002,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.041,
+          "emp_rate_b": 0.0256,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.0,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.041,
+          "emp_rate_b": 0.0,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": false
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0238,
+          "emp_rate_b": 0.0357,
+          "model_delta_a": 0.002,
+          "model_delta_b": 0.002,
+          "agree": true
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0238,
+          "emp_rate_b": 0.0449,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.002,
+          "agree": false
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0238,
+          "emp_rate_b": 0.0256,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.0,
+          "agree": false
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.0238,
+          "emp_rate_b": 0.0,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0357,
+          "emp_rate_b": 0.0449,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.002,
+          "agree": false
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0357,
+          "emp_rate_b": 0.0256,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.0,
+          "agree": true
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.0357,
+          "emp_rate_b": 0.0,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "SWITCH_LEFT",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0449,
+          "emp_rate_b": 0.0256,
+          "model_delta_a": -0.002,
+          "model_delta_b": -0.0,
+          "agree": false
+        },
+        {
+          "action_a": "SWITCH_LEFT",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.0449,
+          "emp_rate_b": 0.0,
+          "model_delta_a": -0.002,
+          "model_delta_b": -0.001,
+          "agree": false
+        },
+        {
+          "action_a": "SWITCH_RIGHT",
+          "action_b": "THROUGH_BALL",
+          "emp_rate_a": 0.0256,
+          "emp_rate_b": 0.0,
+          "model_delta_a": -0.0,
+          "model_delta_b": -0.001,
+          "agree": true
+        }
+      ]
+    },
+    {
+      "zone": 1,
+      "phase": 2,
+      "zone_name": "Middle \u2153",
+      "phase_name": "Set piece",
+      "n_possessions": 19901,
+      "actions_ranked": [
+        "ADVANCE",
+        "CROSS",
+        "DRIBBLE",
+        "HOLD",
+        "SWITCH_LEFT",
+        "SWITCH_RIGHT"
+      ],
+      "empirical_s3_rates": {
+        "ADVANCE": 0.03,
+        "CROSS": 0.0177,
+        "DRIBBLE": 0.0232,
+        "HOLD": 0.0303,
+        "SWITCH_LEFT": 0.0143,
+        "SWITCH_RIGHT": 0.0246
+      },
+      "empirical_shot_rates": {
+        "ADVANCE": 0.0017,
+        "CROSS": 0.0088,
+        "DRIBBLE": 0.0019,
+        "HOLD": 0.0027,
+        "SWITCH_LEFT": 0.0,
+        "SWITCH_RIGHT": 0.0
+      },
+      "model_deltas": {
+        "ADVANCE": 0.001,
+        "CROSS": 0.0,
+        "DRIBBLE": 0.0,
+        "HOLD": 0.0,
+        "SWITCH_LEFT": 0.0,
+        "SWITCH_RIGHT": 0.005
+      },
+      "kendall_tau_s3": 0.2582,
+      "kendall_tau_shot": -0.5345,
+      "tau_ci_90": [
+        -0.4181,
+        0.8165
+      ],
+      "sign_agreement": 0.6,
+      "n_pairs": 15,
+      "pairs": [
+        {
+          "action_a": "ADVANCE",
+          "action_b": "CROSS",
+          "emp_rate_a": 0.03,
+          "emp_rate_b": 0.0177,
+          "model_delta_a": 0.001,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.03,
+          "emp_rate_b": 0.0232,
+          "model_delta_a": 0.001,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.03,
+          "emp_rate_b": 0.0303,
+          "model_delta_a": 0.001,
+          "model_delta_b": 0.0,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.03,
+          "emp_rate_b": 0.0143,
+          "model_delta_a": 0.001,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.03,
+          "emp_rate_b": 0.0246,
+          "model_delta_a": 0.001,
+          "model_delta_b": 0.005,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.0177,
+          "emp_rate_b": 0.0232,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0177,
+          "emp_rate_b": 0.0303,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0177,
+          "emp_rate_b": 0.0143,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": false
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0177,
+          "emp_rate_b": 0.0246,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.005,
+          "agree": true
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0232,
+          "emp_rate_b": 0.0303,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": true
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0232,
+          "emp_rate_b": 0.0143,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": false
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0232,
+          "emp_rate_b": 0.0246,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.005,
+          "agree": true
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0303,
+          "emp_rate_b": 0.0143,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.0,
+          "agree": false
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0303,
+          "emp_rate_b": 0.0246,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.005,
+          "agree": false
+        },
+        {
+          "action_a": "SWITCH_LEFT",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0143,
+          "emp_rate_b": 0.0246,
+          "model_delta_a": 0.0,
+          "model_delta_b": 0.005,
+          "agree": true
+        }
+      ]
+    },
+    {
+      "zone": 1,
+      "phase": 3,
+      "zone_name": "Middle \u2153",
+      "phase_name": "Restart",
+      "n_possessions": 5477,
+      "actions_ranked": [
+        "ADVANCE",
+        "CROSS",
+        "DRIBBLE",
+        "HOLD",
+        "SWITCH_LEFT",
+        "SWITCH_RIGHT"
+      ],
+      "empirical_s3_rates": {
+        "ADVANCE": 0.024,
+        "CROSS": 0.0,
+        "DRIBBLE": 0.0317,
+        "HOLD": 0.0239,
+        "SWITCH_LEFT": 0.0541,
+        "SWITCH_RIGHT": 0.0638
+      },
+      "empirical_shot_rates": {
+        "ADVANCE": 0.0,
+        "CROSS": 0.0,
+        "DRIBBLE": 0.0,
+        "HOLD": 0.0024,
+        "SWITCH_LEFT": 0.0,
+        "SWITCH_RIGHT": 0.0213
+      },
+      "model_deltas": {
+        "ADVANCE": -0.001,
+        "CROSS": -0.001,
+        "DRIBBLE": -0.001,
+        "HOLD": 0.002,
+        "SWITCH_LEFT": -0.0,
+        "SWITCH_RIGHT": -0.001
+      },
+      "kendall_tau_s3": -0.0861,
+      "kendall_tau_shot": 0.2222,
+      "tau_ci_90": [
+        -0.7845,
+        0.6742
+      ],
+      "sign_agreement": 0.6,
+      "n_pairs": 15,
+      "pairs": [
+        {
+          "action_a": "ADVANCE",
+          "action_b": "CROSS",
+          "emp_rate_a": 0.024,
+          "emp_rate_b": 0.0,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.024,
+          "emp_rate_b": 0.0317,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.024,
+          "emp_rate_b": 0.0239,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.024,
+          "emp_rate_b": 0.0541,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.0,
+          "agree": true
+        },
+        {
+          "action_a": "ADVANCE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.024,
+          "emp_rate_b": 0.0638,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "DRIBBLE",
+          "emp_rate_a": 0.0,
+          "emp_rate_b": 0.0317,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0,
+          "emp_rate_b": 0.0239,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0,
+          "emp_rate_b": 0.0541,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.0,
+          "agree": true
+        },
+        {
+          "action_a": "CROSS",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0,
+          "emp_rate_b": 0.0638,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "HOLD",
+          "emp_rate_a": 0.0317,
+          "emp_rate_b": 0.0239,
+          "model_delta_a": -0.001,
+          "model_delta_b": 0.002,
+          "agree": false
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0317,
+          "emp_rate_b": 0.0541,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.0,
+          "agree": true
+        },
+        {
+          "action_a": "DRIBBLE",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0317,
+          "emp_rate_b": 0.0638,
+          "model_delta_a": -0.001,
+          "model_delta_b": -0.001,
+          "agree": true
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_LEFT",
+          "emp_rate_a": 0.0239,
+          "emp_rate_b": 0.0541,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.0,
+          "agree": false
+        },
+        {
+          "action_a": "HOLD",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0239,
+          "emp_rate_b": 0.0638,
+          "model_delta_a": 0.002,
+          "model_delta_b": -0.001,
+          "agree": false
+        },
+        {
+          "action_a": "SWITCH_LEFT",
+          "action_b": "SWITCH_RIGHT",
+          "emp_rate_a": 0.0541,
+          "emp_rate_b": 0.0638,
+          "model_delta_a": -0.0,
+          "model_delta_b": -0.001,
+          "agree": false
+        }
+      ]
+    }
+  ]
+}

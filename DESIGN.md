@@ -33,7 +33,32 @@ Women's World Cup StatsBomb open data. 360° freeze-frame positions form the spa
 
 Check 2's original numbers (0.699/0.745/0.753) were leakage artifacts — real StatsBomb sequences contain outcome-correlated action labels. Honest numbers use policy-generated action sequences with mean pooling.
 
-**Pending re-measurement**: re-run Check 3 and Stage 2 decomposition with formation tier clamps on (see §5). Expect classifier AUC < 0.892 (clamped frames are more formation-realistic). Stage 2 nudge upward from 0.506 would indicate the clamp incidentally restores formation structure destroyed by the generator.
+**With formation tier clamps (re-measured 2026-05-31)**:
+
+| Check | Baseline | With clamps | Δ |
+|---|---|---|---|
+| Check 3 — classifier AUC | 0.892 | **0.845** | −0.047 |
+| Stage 2 — s2 AUC | 0.506 | **0.509** | +0.003 |
+
+Check 3 improvement is claimable: clamped frames are more formation-realistic. Stage 2 moved negligibly, confirming the clamp improves legibility, not predictive fidelity.
+
+**Check 4 — Comparative action effect-ordering (2026-05-31)**:
+
+`scripts/15_validate_action_ordering.py` tests whether the simulator ranks the *relative* effect of actions correctly — the only empirical bar a counterfactual tool can uniquely clear.
+
+Result: **47.1% global sign-agreement across 51 action pairs (3 context buckets) — essentially random, FAIL.**
+
+Per-bucket Kendall's τ (reached_s3 as outcome):
+
+| Bucket | τ | Sign-agreement |
+|---|---|---|
+| Middle ⅓, Open play | −0.476 | 29% |
+| Middle ⅓, Set piece | +0.258 | 60% |
+| Middle ⅓, Restart | −0.086 | 60% |
+
+Root cause: model action deltas span only ±0.005 — the action transforms do not produce discriminative spatial signal in a single step, consistent with Stage 2 AUC ≈ random. SWITCH_LEFT has the highest empirical progression rate in open play but the model ranks it last.
+
+**Conclusion**: the simulation's value is **communicative, not analytical**. LIM remains the empirically sound forecasting layer. The simulation is the amplification/explanation surface: it makes the 167K-parameter set transformer interactive, expresses team style visibly, and gives sponsors/analysts something they can drag actions through and watch danger move. That is a real product value even without analytical AUC claims. Stop claiming empirical soundness for the sim and lean entirely on LIM for that.
 
 ---
 
@@ -57,15 +82,15 @@ The generator does not model the goalkeeper's structural role; without this, GKs
 
 ### Layer 3 — Formation tier clamps
 
-`_clamp_outfield_positions()` assigns each outfield player a DEF/MID/FWD tier based on nominal formation counts (parsed from the StatsBomb lineup, not hardcoded to 4-3-3), then constrains generated x-positions to zone-sensitive bands:
+`_clamp_outfield_positions()` assigns each outfield player a DEF/MID/FWD tier based on nominal formation counts (parsed from the StatsBomb lineup, not hardcoded to 4-3-3), then constrains generated x-positions to fixed bands:
 
-| Tier | Band (zone 0–1) | Band (zone 2–3) |
+| Tier | Team A band | Team B band (flipped) |
 |---|---|---|
-| DEF | [0.09, 0.50] | [0.11, 0.58] |
-| MID | [0.20, 0.63] | [0.26, 0.72] |
-| FWD | [0.30, 0.76] | [0.38, 0.87] |
+| DEF | [0.07, 0.42] | [0.58, 0.93] |
+| MID | [0.30, 0.65] | [0.35, 0.70] |
+| FWD | [0.54, 0.88] | [0.12, 0.46] |
 
-Bands overlap intentionally — the generator's real spatial variation is preserved near boundaries; only the tails are cut.
+Bands are **not zone-indexed** — the ball's position doesn't define where players structurally belong, and zone-indexing caused Team B's forwards to appear deep in Team A's half (fixed 2026-05-31). Midfields overlap in the center third (realistic); DEF and FWD don't cross between teams. Urgency (score × minute) shifts the whole block ±10pp.
 
 **Urgency adjustment** (designer-set thresholds, not learned):
 - Losing ≥0.5 goals after minute 72: all bands shift +10pp (push up)

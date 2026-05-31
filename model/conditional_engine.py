@@ -624,12 +624,14 @@ class ConditionalEngine:
     # Default formation when no lineup is provided
     _DEFAULT_FORMATION: dict = {"def": 4, "mid": 3, "fwd": 3}
 
-    # Per-tier x-ranges for Team A (left → right), indexed by zone 0–3.
+    # Fixed x-bands for Team A (left → right).  Team B uses (1−hi, 1−lo).
+    # Not zone-indexed: ball position doesn't define where players live.
+    # Urgency (score × minute) shifts the whole block up/down instead.
+    # DEF and FWD don't overlap between teams; midfields share the center.
     _TIER_X: dict = {
-        #         zone 0          zone 1          zone 2          zone 3
-        "def": [(0.09, 0.42), (0.11, 0.50), (0.16, 0.58), (0.20, 0.63)],
-        "mid": [(0.20, 0.55), (0.26, 0.63), (0.32, 0.72), (0.37, 0.77)],
-        "fwd": [(0.30, 0.68), (0.38, 0.76), (0.48, 0.87), (0.53, 0.91)],
+        "def": (0.07, 0.42),   # own half to halfway
+        "mid": (0.30, 0.65),   # central corridor
+        "fwd": (0.54, 0.88),   # attacking half
     }
 
     def _clamp_outfield_positions(self, xy: torch.Tensor,
@@ -646,13 +648,12 @@ class ConditionalEngine:
           ranks ..  ..+n_mid  → MID
           ranks ..  ..+n_fwd  → FWD
 
-        Bands are zone-sensitive and shift with urgency (score × late minute).
+        Bands shift with urgency (score × late minute) but are not zone-indexed —
+        the zone reflects ball position, not where players structurally belong.
         Team B ranges are the mirror image of Team A (1 − x).
         """
         if xy.shape[1] < 11:
             return xy
-
-        zone = min(context.zone, 3)
 
         urgency = 0.0
         if context.score_diff < -0.5 and context.minute > 72:
@@ -676,7 +677,7 @@ class ConditionalEngine:
 
         def _apply(sorted_idx: list, tier_ranks: list, flip: bool) -> None:
             for tier, r0, r1 in tier_ranks:
-                lo, hi = self._TIER_X[tier][zone]
+                lo, hi = self._TIER_X[tier]
                 lo = float(lo) + urgency
                 hi = float(hi) + urgency
                 if flip:
