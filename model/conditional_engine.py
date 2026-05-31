@@ -138,11 +138,26 @@ class ConditionalEngine:
             torch.stack(list(self.fingerprints.values())).mean(0)
         )
 
-        # Build action encoder and seed from PCA if available
+        # Build PCA-seeded action encoder (legacy fallback)
         self.action_encoder = build_action_encoder(z_dim=256).to(self.device)
         pca_path = fingerprint_path.parent.parent / "results" / "tactical_pca.csv"
         init_from_pca(self.action_encoder, self.fingerprints, pca_path)
         self.action_encoder.eval()
+
+        # Try to load a learned encoder — MLP preferred over affine
+        _ckpt_dir = fingerprint_path.parent
+        self.learned_encoder = None
+        for _enc_name in ("action_encoder_mlp.pt", "action_encoder_affine.pt"):
+            _path = _ckpt_dir / _enc_name
+            if _path.exists():
+                from model.learned_action_encoder import ConditionedMLP, PerActionAffine
+                _cls  = ConditionedMLP if "mlp" in _enc_name else PerActionAffine
+                _enc  = _cls().to(self.device)
+                _enc.load_state_dict(torch.load(_path, map_location=self.device))
+                _enc.eval()
+                self.learned_encoder = _enc
+                print(f"  Learned action encoder loaded: {_enc_name}")
+                break
 
         # Fixed role template (11 teammates + 11 opponents, player 0 = actor)
         N = self.generator.n_players
@@ -194,7 +209,7 @@ class ConditionalEngine:
         Returns:
             ActionResult with freeze frame + probabilities + deltas
         """
-        from model.action_encoder import apply_action, ACTION_LABELS
+        from model.action_encoder import ACTION_LABELS
 
         z_A_base = self.fingerprints.get(team_id_a, self.mean_fp).to(self.device)
         z_B      = self.fingerprints.get(team_id_b, self.mean_fp).to(self.device)
@@ -203,9 +218,7 @@ class ConditionalEngine:
         baseline_probs = self._run_sse_probs(z_A_base, z_B, context)
 
         # ── Apply action → modified fingerprint ───────────────────────────────
-        z_A_mod = apply_action(
-            self.action_encoder, z_A_base, action, context, alpha
-        ).to(self.device)
+        z_A_mod = self._apply_action(z_A_base, action, context, alpha).to(self.device)
 
         # ── Generate freeze frame under modified fingerprint ───────────────────
         c = self._encode_condition(z_A_mod, z_B, context)
@@ -273,7 +286,7 @@ class ConditionalEngine:
                               to z_A before each step and averages outputs
             noise_std       : noise magnitude as a fraction of ||z_A|| (0.05 = 5%)
         """
-        from model.action_encoder import apply_action, ACTION_LABELS, Action, MatchContext
+        from model.action_encoder import ACTION_LABELS, MatchContext
 
         z_A = self.fingerprints.get(team_id_a, self.mean_fp).clone().to(self.device)
         z_B = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
@@ -288,11 +301,11 @@ class ConditionalEngine:
         prev_xy: torch.Tensor | None = None   # (1, N, 2) on device, updated each step
 
         for action, alpha in sequence:
-            z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, alpha).to(self.device)
+            z_A_mod = self._apply_action(z_A, action, ctx, alpha).to(self.device)
             z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))
 
             def_action = self._choose_defense(action, z_A_mod, z_B, norm_B, ctx, adversarial)
-            z_B_mod    = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+            z_B_mod    = self._apply_action(z_B, def_action, ctx, 0.5).to(self.device)
             z_B_mod    = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))
 
             new_zone   = min(ctx.zone + int(action.value == 0), 3)
@@ -403,7 +416,7 @@ class ConditionalEngine:
         Complexity: O(beam_width × |Actions| × max_depth) SSE evaluations
                     = 3 × 11 × 4 = 132 at default settings.
         """
-        from model.action_encoder import apply_action, ACTION_LABELS, Action, MatchContext
+        from model.action_encoder import ACTION_LABELS, Action, MatchContext
 
         z_A0 = self.fingerprints.get(team_id_a, self.mean_fp).clone().to(self.device)
         z_B0 = self.fingerprints.get(team_id_b, self.mean_fp).clone().to(self.device)
@@ -423,11 +436,11 @@ class ConditionalEngine:
             candidates = []
             for _, seq, z_A, z_B, ctx in beam:
                 for action in Action:
-                    z_A_mod = apply_action(self.action_encoder, z_A, action, ctx, 1.0).to(self.device)
+                    z_A_mod = self._apply_action(z_A, action, ctx, 1.0).to(self.device)
                     z_A_mod = z_A_mod * (norm_A / z_A_mod.norm().clamp(min=1e-8))
 
                     def_action = self._choose_defense(action, z_A_mod, z_B, norm_B, ctx, adversarial)
-                    z_B_mod    = apply_action(self.action_encoder, z_B, def_action, ctx, 0.5).to(self.device)
+                    z_B_mod    = self._apply_action(z_B, def_action, ctx, 0.5).to(self.device)
                     z_B_mod    = z_B_mod * (norm_B / z_B_mod.norm().clamp(min=1e-8))
 
                     p        = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
@@ -468,7 +481,7 @@ class ConditionalEngine:
         by ΔP(shot) — highest first.  Used by the frontend "What next?" panel
         and the pre-match sequence optimiser.
         """
-        from model.action_encoder import apply_action, ACTION_LABELS, Action
+        from model.action_encoder import ACTION_LABELS, Action
 
         z_A = self.fingerprints.get(team_id_a, self.mean_fp).to(self.device)
         z_B = self.fingerprints.get(team_id_b, self.mean_fp).to(self.device)
@@ -478,7 +491,7 @@ class ConditionalEngine:
 
         rows = []
         for action in Action:
-            z_mod = apply_action(self.action_encoder, z_A, action, context, 1.0).to(self.device)
+            z_mod = self._apply_action(z_A, action, context, 1.0).to(self.device)
             z_mod = z_mod * (norm_A / z_mod.norm().clamp(min=1e-8))
             p     = self._run_sse_probs(z_mod, z_B, context)
             rows.append({
@@ -497,6 +510,36 @@ class ConditionalEngine:
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
+    def _ctx_tensor(self, ctx: "MatchContext") -> torch.Tensor:
+        """Build the (1, 3) context tensor [zone/3, phase_open, phase_counter]."""
+        return torch.tensor(
+            [[ctx.zone / 3.0, float(ctx.phase == 1), float(ctx.phase >= 2)]],
+            dtype=torch.float32, device=self.device,
+        )
+
+    def _apply_action(self,
+                      z:      torch.Tensor,
+                      action: "Action",
+                      ctx:    "MatchContext",
+                      alpha:  float) -> torch.Tensor:
+        """
+        Apply an action transform to z, using the learned encoder when available
+        and falling back to the PCA-seeded encoder otherwise.
+
+        Alpha < 1 interpolates between z (no effect) and z' (full effect).
+        """
+        if self.learned_encoder is not None:
+            z_in  = z.unsqueeze(0) if z.dim() == 1 else z   # (1, 256)
+            a_idx = torch.tensor([action.value], dtype=torch.long, device=self.device)
+            ctx_t = self._ctx_tensor(ctx)
+            z_out = self.learned_encoder.apply(z_in, a_idx, ctx_t).squeeze(0)
+            if alpha < 1.0 - 1e-6:
+                z_out = z + alpha * (z_out - z)
+            return z_out
+        else:
+            from model.action_encoder import apply_action
+            return apply_action(self.action_encoder, z, action, ctx, alpha)
+
     def _choose_defense(self,
                         attacker_action: "Action",
                         z_A_mod:         torch.Tensor,
@@ -511,7 +554,7 @@ class ConditionalEngine:
         adversarial=True:  enumerate all 11 actions, pick the one that
                            minimises Team A's P(shot) — 11 SSE evaluations.
         """
-        from model.action_encoder import apply_action, Action
+        from model.action_encoder import Action
 
         if not adversarial:
             return self._RESPONSE_MAP.get(attacker_action, Action.HOLD)
@@ -519,7 +562,7 @@ class ConditionalEngine:
         best_action = Action.HOLD
         best_p_shot = float("inf")
         for def_a in Action:
-            z_B_try = apply_action(self.action_encoder, z_B, def_a, ctx, 0.5).to(self.device)
+            z_B_try = self._apply_action(z_B, def_a, ctx, 0.5).to(self.device)
             z_B_try = z_B_try * (norm_B / z_B_try.norm().clamp(min=1e-8))
             p = self._run_sse_probs(z_A_mod, z_B_try, ctx)
             if p.p_shot < best_p_shot:
