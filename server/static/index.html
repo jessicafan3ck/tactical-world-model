@@ -132,6 +132,16 @@ header {
 .action-xl.previewing { border-color: var(--gold); background: rgba(240,192,64,0.07); }
 .action-xl.selected  { border-color: var(--blue); border-width: 2px; background: rgba(88,166,255,0.10); }
 .action-xl.illegal   { opacity: 0.38; pointer-events: none; }
+
+/* ── Action guide ─────────────────────────────────────────────────────────── */
+.action-guide-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  padding: 8px 10px 10px;
+}
+.ag-card { display: flex; flex-direction: column; gap: 3px; }
+.ag-lbl  { font-size: 10px; font-weight: 600; color: var(--text); }
+.ag-canvas { width: 100%; height: auto; border-radius: 3px; display: block; }
+.ag-desc { font-size: 9px; color: var(--muted); line-height: 1.3; }
 .action-xl .ax-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .action-xl .ax-hint { font-size: 10px; color: var(--muted); }
 .action-xl .ax-hint.pos { color: var(--green); }
@@ -608,6 +618,13 @@ body.show-p-notation .metric-p-sub { display: block; }
     <div class="run-wrap analyst-only">
       <button class="btn-run" id="runBtn" onclick="runSim()" disabled>▶ Run sequence</button>
     </div>
+
+    <!-- Action guide (what each action looks like) -->
+    <details class="disclosure non-presenter" id="actionGuideDisc"
+             ontoggle="if(this.open) initActionGuide()">
+      <summary>Action guide <span class="disc-chevron">›</span></summary>
+      <div class="action-guide-grid" id="actionGuideGrid"></div>
+    </details>
 
     <!-- Sequence builder (progressive disclosure) -->
     <details class="disclosure non-presenter" id="seqBuilderDisc">
@@ -2143,6 +2160,156 @@ function parseURLSequence() {
       S.queue.push({action:name, alpha:parseFloat(alpha)||1.0});
   }
   if (S.queue.length) { redrawAnalystQueue(); updateRunBtn(); }
+}
+
+// ── Action guide ───────────────────────────────────────────────────────────────
+const _AG = (() => {
+  const W = 90, H = 56;
+  const A = '#58a6ff', B = '#f85149', Y = '#f0c040';
+
+  function _dot(ctx, x, y, r, fill) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2*Math.PI);
+    ctx.fillStyle = fill; ctx.fill();
+  }
+  function _arr(ctx, x1, y1, x2, y2, col='white', lw=1.5) {
+    const a = Math.atan2(y2-y1, x2-x1), hl = 7;
+    ctx.strokeStyle = col; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-hl*Math.cos(a-0.45), y2-hl*Math.sin(a-0.45));
+    ctx.lineTo(x2-hl*Math.cos(a+0.45), y2-hl*Math.sin(a+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  function _qarr(ctx, x1, y1, cpx, cpy, x2, y2, col='white', lw=1.5) {
+    const a = Math.atan2(y2-cpy, x2-cpx), hl = 7;
+    ctx.strokeStyle = col; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.quadraticCurveTo(cpx,cpy,x2,y2); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-hl*Math.cos(a-0.45), y2-hl*Math.sin(a-0.45));
+    ctx.lineTo(x2-hl*Math.cos(a+0.45), y2-hl*Math.sin(a+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  function _cbarr(ctx, x1, y1, cp1x, cp1y, cp2x, cp2y, x2, y2, col='white', lw=1.5) {
+    const a = Math.atan2(y2-cp2y, x2-cp2x), hl = 7;
+    ctx.strokeStyle = col; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.bezierCurveTo(cp1x,cp1y,cp2x,cp2y,x2,y2); ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-hl*Math.cos(a-0.45), y2-hl*Math.sin(a-0.45));
+    ctx.lineTo(x2-hl*Math.cos(a+0.45), y2-hl*Math.sin(a+0.45));
+    ctx.closePath(); ctx.fill();
+  }
+  function _pitch(ctx) {
+    ctx.fillStyle = '#1a4731'; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.5; ctx.setLineDash([]);
+    ctx.strokeRect(W*.04, H*.07, W*.92, H*.86);
+    ctx.beginPath(); ctx.moveTo(W*.5,H*.07); ctx.lineTo(W*.5,H*.93); ctx.stroke();
+    ctx.strokeRect(W*.88, H*.36, W*.08, H*.28); // right goal
+    ctx.strokeRect(W*.04, H*.36, W*.08, H*.28); // left goal
+  }
+
+  return [
+    { label:'Advance', desc:'Drive forward through the center',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.18,H*.50,4,A);
+        _dot(ctx,W*.52,H*.32,3,B); _dot(ctx,W*.52,H*.68,3,B);
+        _arr(ctx,W*.22,H*.50,W*.78,H*.50);
+        _dot(ctx,W*.81,H*.50,3,Y);
+      }},
+    { label:'Through ball', desc:'Play in behind the defensive line',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.15,H*.55,4,A);
+        _dot(ctx,W*.46,H*.42,3,B); _dot(ctx,W*.46,H*.62,3,B);
+        _dot(ctx,W*.74,H*.28,4,A);
+        _qarr(ctx,W*.19,H*.53,W*.45,H*.22,W*.72,H*.31);
+        _dot(ctx,W*.74,H*.30,3,Y);
+      }},
+    { label:'Cross', desc:'Deliver from the flank into the box',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.70,H*.88,4,A);
+        _dot(ctx,W*.80,H*.50,4,A); _dot(ctx,W*.77,H*.44,3,B);
+        _qarr(ctx,W*.70,H*.84,W*.82,H*.66,W*.81,H*.53);
+        _dot(ctx,W*.82,H*.54,3,Y);
+      }},
+    { label:'Dribble', desc:'Carry the ball past defenders',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.12,H*.50,4,A);
+        _dot(ctx,W*.40,H*.35,3,B); _dot(ctx,W*.48,H*.65,3,B);
+        _cbarr(ctx,W*.16,H*.50,W*.30,H*.28,W*.50,H*.72,W*.72,H*.50);
+        _dot(ctx,W*.74,H*.50,3,Y);
+      }},
+    { label:'Shoot', desc:'Attempt a shot on goal',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.68,H*.50,4,A); _dot(ctx,W*.88,H*.50,3.5,B);
+        _dot(ctx,W*.70,H*.50,3,Y);
+        _arr(ctx,W*.72,H*.50,W*.86,H*.50);
+      }},
+    { label:'Switch left', desc:'Switch play to the left flank',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.42,H*.70,4,A); _dot(ctx,W*.40,H*.14,4,A);
+        _qarr(ctx,W*.42,H*.66,W*.62,H*.12,W*.40,H*.17);
+        _dot(ctx,W*.40,H*.15,3,Y);
+      }},
+    { label:'Switch right', desc:'Switch play to the right flank',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.42,H*.30,4,A); _dot(ctx,W*.40,H*.86,4,A);
+        _qarr(ctx,W*.42,H*.34,W*.62,H*.88,W*.40,H*.83);
+        _dot(ctx,W*.40,H*.85,3,Y);
+      }},
+    { label:'Press', desc:'Win the ball back under pressure',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.52,H*.50,4,B); _dot(ctx,W*.52,H*.50,3,Y);
+        [[.20,.25,[.46,.43]],[.20,.75,[.46,.57]],[.32,.08,[.44,.40]],[.32,.92,[.44,.60]]].forEach(([px,py,t]) => {
+          _dot(ctx,W*px,H*py,3.5,A);
+          _arr(ctx,W*px,H*py,W*t[0],H*t[1],'rgba(255,255,255,0.8)',1.2);
+        });
+      }},
+    { label:'Keeper ball', desc:'Goalkeeper builds from the back',
+      fn(ctx) {
+        _pitch(ctx);
+        _dot(ctx,W*.08,H*.50,4,A); _dot(ctx,W*.08,H*.50,3,Y);
+        _dot(ctx,W*.45,H*.25,3.5,A); _dot(ctx,W*.45,H*.75,3.5,A);
+        _qarr(ctx,W*.10,H*.47,W*.30,H*.20,W*.44,H*.27,'rgba(255,255,255,0.7)',1.2);
+        _qarr(ctx,W*.10,H*.53,W*.30,H*.80,W*.44,H*.73,'rgba(255,255,255,0.7)',1.2);
+      }},
+  ];
+})();
+
+function initActionGuide() {
+  const grid = document.getElementById('actionGuideGrid');
+  if (!grid || grid.children.length > 0) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = 90, H = 56;
+  for (const spec of _AG) {
+    const card = document.createElement('div');
+    card.className = 'ag-card';
+    const lbl = document.createElement('div');
+    lbl.className = 'ag-lbl'; lbl.textContent = spec.label;
+    const cv = document.createElement('canvas');
+    cv.className = 'ag-canvas';
+    cv.width  = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = W+'px'; cv.style.height = H+'px';
+    const desc = document.createElement('div');
+    desc.className = 'ag-desc'; desc.textContent = spec.desc;
+    card.append(lbl, cv, desc);
+    grid.appendChild(card);
+    const ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    spec.fn(ctx);
+  }
 }
 
 // ── Onboarding ─────────────────────────────────────────────────────────────────
