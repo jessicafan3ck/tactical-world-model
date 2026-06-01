@@ -744,6 +744,57 @@ class ConditionalEngine:
             sorted_b = [11 + r for r in rel]
             _apply(sorted_b, _tier_ranks(formation_b), flip=True)
 
+        return self._spread_y(xy)
+
+    def _spread_y(self, xy: torch.Tensor) -> torch.Tensor:
+        """
+        Enforce minimum lateral (y-axis) separation between outfield players
+        on each team so the shape spans the pitch width rather than clustering.
+
+        min_gap=0.09 (~6m) with 10 outfield players needs 0.81 span on a
+        [0.07, 0.93] = 0.86 field — fits with margin.  blend=0.65 pulls
+        partway toward the target so the correction feels soft, not snapped.
+        """
+        min_gap = 0.09
+        blend   = 0.65
+        xy      = xy.clone()
+        n_total = xy.shape[1]
+
+        for team_start, team_end in [(0, min(11, n_total)), (11, min(22, n_total))]:
+            n = team_end - team_start
+            if n < 3:
+                continue
+            # GK = most extreme x on each side
+            if team_start == 0:
+                gk = int(xy[0, team_start:team_end, 0].argmin().item()) + team_start
+            else:
+                gk = int(xy[0, team_start:team_end, 0].argmax().item()) + team_start
+            outfield = [i for i in range(team_start, team_end) if i != gk]
+            if len(outfield) < 2:
+                continue
+
+            ys      = [xy[0, i, 1].item() for i in outfield]
+            order   = sorted(range(len(outfield)), key=lambda k: ys[k])
+            s_idxs  = [outfield[k] for k in order]
+            new_ys  = [ys[k] for k in order]
+
+            # Forward pass: push players apart upward
+            for i in range(1, len(new_ys)):
+                if new_ys[i] - new_ys[i - 1] < min_gap:
+                    new_ys[i] = new_ys[i - 1] + min_gap
+            new_ys[-1] = min(0.93, new_ys[-1])
+
+            # Backward pass: pull back down if ceiling was hit
+            for i in range(len(new_ys) - 2, -1, -1):
+                if new_ys[i + 1] - new_ys[i] < min_gap:
+                    new_ys[i] = new_ys[i + 1] - min_gap
+            new_ys[0] = max(0.07, new_ys[0])
+
+            # Soft blend toward target (preserves generator's y ordering)
+            for rank, idx in enumerate(s_idxs):
+                current = xy[0, idx, 1].item()
+                xy[0, idx, 1] = current + blend * (new_ys[rank] - current)
+
         return xy
 
     def _ctx_tensor(self, ctx: "MatchContext") -> torch.Tensor:

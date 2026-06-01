@@ -120,8 +120,9 @@ header {
 
 /* Explainer: 5 large action buttons */
 .action-xl-grid {
-  display: flex; flex-direction: column; gap: 6px; padding: 12px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px 12px;
 }
+.action-xl-grid > .exploratory-label { grid-column: 1 / -1; }
 .action-xl {
   display: flex; flex-direction: column; align-items: flex-start;
   gap: 3px; padding: 10px 12px; border-radius: var(--radius);
@@ -580,6 +581,26 @@ body.show-p-notation .metric-p-sub { display: block; }
               onmouseenter="previewHint('SHOOT')" onmouseleave="clearPreview()">
         <span class="ax-name">Shoot</span>
         <span class="ax-hint" id="hint-SHOOT">—</span>
+      </button>
+      <button class="action-xl" data-action="SWITCH_LEFT"  onclick="explainerRun('SWITCH_LEFT')"
+              onmouseenter="previewHint('SWITCH_LEFT')" onmouseleave="clearPreview()">
+        <span class="ax-name">Switch left</span>
+        <span class="ax-hint" id="hint-SWITCH_LEFT">—</span>
+      </button>
+      <button class="action-xl" data-action="SWITCH_RIGHT" onclick="explainerRun('SWITCH_RIGHT')"
+              onmouseenter="previewHint('SWITCH_RIGHT')" onmouseleave="clearPreview()">
+        <span class="ax-name">Switch right</span>
+        <span class="ax-hint" id="hint-SWITCH_RIGHT">—</span>
+      </button>
+      <button class="action-xl" data-action="PRESS"        onclick="explainerRun('PRESS')"
+              onmouseenter="previewHint('PRESS')" onmouseleave="clearPreview()">
+        <span class="ax-name">Press</span>
+        <span class="ax-hint" id="hint-PRESS">—</span>
+      </button>
+      <button class="action-xl" data-action="KEEPER_BALL"  onclick="explainerRun('KEEPER_BALL')"
+              onmouseenter="previewHint('KEEPER_BALL')" onmouseleave="clearPreview()">
+        <span class="ax-name">Keeper ball</span>
+        <span class="ax-hint" id="hint-KEEPER_BALL">—</span>
       </button>
       <div class="exploratory-label" style="padding-top:2px">
         Exploratory — the engine's expectation, not advice.
