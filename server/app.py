@@ -139,6 +139,7 @@ class StepRequest(BaseModel):
     formation_b:    dict | None = None
     continuity:     float = 0.15         # max per-player Δ per step in [0,1] space
     prev_positions: list | None = None   # [[x,y]×22] from previous frame; enables continuity
+    actor_slot:     int | None  = None   # Team A slot index holding the ball; None = slot 0
 
 
 class SequenceStep(BaseModel):
@@ -358,7 +359,8 @@ async def step(req: StepRequest):
         formation_b    = req.formation_b,
         continuity     = req.continuity,
         prev_positions = req.prev_positions,
-        gen_steps      = 15,   # 15 steps: ~87ms vs 127ms for 30; quality adequate for demo
+        actor_slot     = req.actor_slot,
+        gen_steps      = 15,
     )
     step_ms = round((time.perf_counter() - t0) * 1000, 1)
 

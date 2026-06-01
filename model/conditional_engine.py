@@ -66,6 +66,7 @@ class ActionResult:
     probs:          OutcomeProbabilities
     prob_deltas:    OutcomeProbabilities      # change vs baseline
     context_after:  dict                     # updated match state
+    actor_slot:     int                      = 0     # Team A slot index that now has the ball
     prob_stds:      OutcomeProbabilities | None = field(default=None)  # set when n_samples > 1
 
     def to_json_safe(self) -> dict:
@@ -77,6 +78,7 @@ class ActionResult:
             "probs":      self.probs.to_dict(),
             "deltas":     self.prob_deltas.to_dict(),
             "context":    self.context_after,
+            "actor_slot": self.actor_slot,
         }
         if self.prob_stds is not None:
             result["stds"] = self.prob_stds.to_dict()
@@ -210,7 +212,8 @@ class ConditionalEngine:
              formation_a:    dict | None = None,
              formation_b:    dict | None = None,
              continuity:     float       = 0.0,
-             prev_positions: list | None = None) -> "ActionResult":
+             prev_positions: list | None = None,
+             actor_slot:     int | None  = None) -> "ActionResult":
         """
         Execute one conditional inference step.
 
@@ -235,8 +238,16 @@ class ConditionalEngine:
         z_A_base = self.fingerprints.get(team_id_a, self.mean_fp).to(self.device)
         z_B      = self.fingerprints.get(team_id_b, self.mean_fp).to(self.device)
 
+        # ── Build local roles for this step (stateless: don't mutate self.roles) ──
+        if actor_slot is not None and 0 <= actor_slot < 11:
+            local_roles = self.roles.clone()
+            local_roles[0, :, 1] = 0.0
+            local_roles[0, actor_slot, 1] = 1.0
+        else:
+            local_roles = self.roles
+
         # ── Baseline (no action) ───────────────────────────────────────────────
-        baseline_probs = self._run_sse_probs(z_A_base, z_B, context)
+        baseline_probs = self._run_sse_probs(z_A_base, z_B, context, local_roles)
 
         # ── Apply action → modified fingerprint ───────────────────────────────
         z_A_mod = self._apply_action(z_A_base, action, context, alpha).to(self.device)
@@ -252,7 +263,7 @@ class ConditionalEngine:
         c = self._encode_condition(z_A_mod, z_B, context)
         gen_xy = self._debias_positions(
             self.generator.generate(
-                self.roles, c, self.mask, n_steps=gen_steps,
+                local_roles, c, self.mask, n_steps=gen_steps,
                 x_prior=x_prior,
                 max_delta_per_step=continuity if continuity > 0.0 else None,
             ),
@@ -262,13 +273,18 @@ class ConditionalEngine:
         )  # (1, N, 2)
 
         # ── Evaluate SSE on generated frame ───────────────────────────────────
-        modified_probs = self._run_sse_probs(z_A_mod, z_B, context)
+        modified_probs = self._run_sse_probs(z_A_mod, z_B, context, local_roles)
+
+        # ── Compute who has the ball after this action ─────────────────────────
+        new_actor = self._compute_new_actor(action, gen_xy, local_roles)
+        out_roles = local_roles.clone()
+        out_roles[0, :, 1] = 0.0
+        out_roles[0, new_actor, 1] = 1.0
 
         # ── Package outputs ───────────────────────────────────────────────────
-        N = self.generator.n_players
-        positions_np = gen_xy.squeeze(0).cpu().numpy()          # (N, 2)
-        roles_np     = self.roles.squeeze(0).cpu().numpy()      # (N, 2)
-        mask_np      = self.mask.squeeze(0).cpu().numpy()       # (N,)
+        positions_np = gen_xy.squeeze(0).cpu().numpy()
+        roles_np     = out_roles.squeeze(0).cpu().numpy()
+        mask_np      = self.mask.squeeze(0).cpu().numpy()
 
         delta_probs = OutcomeProbabilities(
             p_advance     = modified_probs.p_advance     - baseline_probs.p_advance,
@@ -285,11 +301,12 @@ class ConditionalEngine:
         }
 
         return ActionResult(
-            action_name  = ACTION_LABELS[action],
-            freeze_frame = FreezeFrameResult(positions_np, roles_np, mask_np),
-            probs        = modified_probs,
-            prob_deltas  = delta_probs,
+            action_name   = ACTION_LABELS[action],
+            freeze_frame  = FreezeFrameResult(positions_np, roles_np, mask_np),
+            probs         = modified_probs,
+            prob_deltas   = delta_probs,
             context_after = context_after,
+            actor_slot    = new_actor,
         )
 
     # ── Sequence simulation ────────────────────────────────────────────────────
@@ -333,8 +350,10 @@ class ConditionalEngine:
         norm_A = z_A.norm().clamp(min=1e-8)
         norm_B = z_B.norm().clamp(min=1e-8)
 
-        baseline = self._run_sse_probs(z_A, z_B, ctx)
-        results  = []
+        # Track actor across steps — start with slot 0 (default)
+        local_roles  = self.roles.clone()
+        baseline     = self._run_sse_probs(z_A, z_B, ctx, local_roles)
+        results      = []
         prev_xy: torch.Tensor | None = None   # (1, N, 2) on device, updated each step
 
         for action, alpha in sequence:
@@ -364,10 +383,10 @@ class ConditionalEngine:
                     c_n     = self._encode_condition(z_noisy, z_B_mod, ctx)
                     xy_n    = self._debias_positions(
                         self.generator.generate(
-                            self.roles, c_n, self.mask, n_steps=gen_steps,
+                            local_roles, c_n, self.mask, n_steps=gen_steps,
                             x_prior=x_prior, max_delta_per_step=max_delta,
                         ), ctx, formation_a=formation_a, formation_b=formation_b)
-                    p_n     = self._run_sse_probs(z_noisy, z_B_mod, ctx)
+                    p_n     = self._run_sse_probs(z_noisy, z_B_mod, ctx, local_roles)
                     all_xy.append(xy_n)
                     all_p.append([p_n.p_advance, p_n.p_final_third, p_n.p_shot])
 
@@ -387,11 +406,17 @@ class ConditionalEngine:
                 c      = self._encode_condition(z_A_mod, z_B_mod, ctx)
                 gen_xy = self._debias_positions(
                     self.generator.generate(
-                        self.roles, c, self.mask, n_steps=gen_steps,
+                        local_roles, c, self.mask, n_steps=gen_steps,
                         x_prior=x_prior, max_delta_per_step=max_delta,
                     ), ctx, formation_a=formation_a, formation_b=formation_b)
-                probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx)
+                probs  = self._run_sse_probs(z_A_mod, z_B_mod, ctx, local_roles)
                 stds   = None
+
+            # Advance actor for next step
+            new_actor   = self._compute_new_actor(action, gen_xy, local_roles)
+            local_roles = local_roles.clone()
+            local_roles[0, :, 1] = 0.0
+            local_roles[0, new_actor, 1] = 1.0
 
             prev_xy = gen_xy   # carry forward for next step's prior
 
@@ -405,9 +430,10 @@ class ConditionalEngine:
                 action_name   = ACTION_LABELS[action],
                 freeze_frame  = FreezeFrameResult(
                     gen_xy.squeeze(0).cpu().numpy(),
-                    self.roles.squeeze(0).cpu().numpy(),
+                    local_roles.squeeze(0).cpu().numpy(),
                     self.mask.squeeze(0).cpu().numpy(),
                 ),
+                actor_slot    = new_actor,
                 probs         = probs,
                 prob_deltas   = deltas,
                 prob_stds     = stds,
@@ -796,23 +822,73 @@ class ConditionalEngine:
             z_A.unsqueeze(0), z_B.unsqueeze(0), sd, mn, p_oh, z_oh
         )
 
+    def _compute_new_actor(self,
+                           action:      "Action",
+                           gen_xy:      torch.Tensor,
+                           local_roles: torch.Tensor) -> int:
+        """
+        Return the Team A slot index that should hold the ball after this action.
+
+        Ball-transfer actions (THROUGH_BALL, CROSS, SWITCH_*) pick a receiver
+        from generated positions. No-transfer actions keep the current actor.
+        GK (lowest-x Team A slot) is never a receiver.
+        """
+        from model.action_encoder import Action
+
+        NO_TRANSFER = {Action.ADVANCE, Action.DRIBBLE, Action.SHOOT,
+                       Action.PRESS, Action.LOW_BLOCK, Action.HOLD,
+                       Action.KEEPER_BALL}
+
+        current_actor = int(local_roles[0, :11, 1].argmax().item())
+
+        if action in NO_TRANSFER:
+            return current_actor
+
+        pos = gen_xy[0].cpu()   # (N, 2)
+        gk_a = int(pos[:11, 0].argmin().item())
+        candidates = [i for i in range(11) if i != current_actor and i != gk_a]
+        if not candidates:
+            return current_actor
+
+        if action == Action.THROUGH_BALL:
+            # Runner in behind — furthest forward (highest x)
+            return max(candidates, key=lambda i: float(pos[i, 0]))
+
+        if action == Action.CROSS:
+            # Attacker arriving in the box — closest to (0.88, 0.50)
+            atk = [i for i in candidates if float(pos[i, 0]) > 0.55]
+            pool = atk if atk else candidates
+            return min(pool, key=lambda i: (float(pos[i, 0]) - 0.88) ** 2
+                                         + (float(pos[i, 1]) - 0.50) ** 2)
+
+        if action == Action.SWITCH_LEFT:
+            # Wide player on the low-y flank
+            return min(candidates, key=lambda i: float(pos[i, 1]))
+
+        if action == Action.SWITCH_RIGHT:
+            # Wide player on the high-y flank
+            return max(candidates, key=lambda i: float(pos[i, 1]))
+
+        return current_actor
+
     def _run_sse_probs(self,
                        z_A:     torch.Tensor,
                        z_B:     torch.Tensor,
-                       context: "MatchContext") -> OutcomeProbabilities:
+                       context: "MatchContext",
+                       roles:   torch.Tensor | None = None) -> OutcomeProbabilities:
         """
         Run a synthetic freeze frame through the SSE to get outcome probs.
         We generate a quick low-step frame so the SSE sees realistic positions.
         """
+        r      = roles if roles is not None else self.roles
         c      = self._encode_condition(z_A, z_B, context)
         gen_xy = self._debias_positions(
-            self.generator.generate(self.roles, c, self.mask, n_steps=10),
+            self.generator.generate(r, c, self.mask, n_steps=10),
             context,
         )  # (1, N, 2)
 
         # Reconstruct full position tensor (x, y, is_teammate, is_actor)
-        N        = self.generator.n_players
-        pos_full = torch.cat([gen_xy, self.roles], dim=-1)  # (1, N, 4)
+        pos_full = torch.cat([gen_xy, r], dim=-1)  # (1, N, 4)
 
         ctx_t = torch.tensor(
             [context.zone / 3.0,

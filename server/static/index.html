@@ -833,14 +833,14 @@ const S = {
 
 // ── Default formation (4-3-3) ─────────────────────────────────────────────────
 const DEF_POS_A = [
-  [0.05,0.50],[0.20,0.20],[0.20,0.40],[0.20,0.60],[0.20,0.80],
-  [0.42,0.25],[0.42,0.50],[0.42,0.75],
-  [0.65,0.18],[0.65,0.82],[0.70,0.50],
+  [0.05,0.50],[0.18,0.20],[0.18,0.40],[0.18,0.60],[0.18,0.80],
+  [0.34,0.25],[0.34,0.50],[0.34,0.75],
+  [0.46,0.18],[0.46,0.82],[0.48,0.50],
 ];
 const DEF_POS_B = [
-  [0.95,0.50],[0.80,0.80],[0.80,0.60],[0.80,0.40],[0.80,0.20],
-  [0.58,0.75],[0.58,0.50],[0.58,0.25],
-  [0.35,0.82],[0.35,0.18],[0.30,0.50],
+  [0.95,0.50],[0.82,0.80],[0.82,0.60],[0.82,0.40],[0.82,0.20],
+  [0.66,0.75],[0.66,0.50],[0.66,0.25],
+  [0.54,0.82],[0.54,0.18],[0.52,0.50],
 ];
 const DEF_POSITIONS = [...DEF_POS_A, ...DEF_POS_B];
 const DEF_ROLES = DEF_POSITIONS.map((_,i) => [i < 11 ? 1 : 0, i === 6 ? 1 : 0]);
@@ -852,9 +852,13 @@ let _dpr = 1;              // devicePixelRatio, set by resizeCanvas()
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener("load", async () => {
-  resizeCanvas();
-  drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
-  updateLegalActions();
+  // Defer initial draw to rAF so pitchWrap has a computed height before we measure it.
+  // Without this Safari computes clientHeight = 0 at load time → CW/CH = 0 → blank canvas.
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
+    updateLegalActions();
+  });
   await loadTeams();
   parseURLSequence();
   checkOnboarding();
@@ -1124,6 +1128,7 @@ async function explainerRun(action) {
         formation_a: S.formationA, formation_b: S.formationB,
         continuity:     prevPositions ? S.continuity : 0.0,
         prev_positions: prevPositions,
+        actor_slot:     prevFrame?.actor_slot ?? null,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail);
@@ -1141,7 +1146,7 @@ async function explainerRun(action) {
     }
 
     // Identity tracking: init on first frame, propagate on subsequent
-    const prevPositions = S.step >= 0 ? S.frames[S.step]?.positions ?? null : null;
+    // prevPositions already declared above (line ~1121) — reuse it here
     S.frames.push(frame);
     S.step = S.frames.length - 1;
     if (S.step === 0 || !S.identitiesA) {
@@ -1725,10 +1730,13 @@ function resizeCanvas() {
   const padH   = parseFloat(style.paddingLeft)  + parseFloat(style.paddingRight);
   const padV   = parseFloat(style.paddingTop)   + parseFloat(style.paddingBottom);
   const ratio  = 105/68;
-  const mw = wrap.clientWidth  - padH;
-  const mh = wrap.clientHeight - padV;
-  if (mw/ratio <= mh) { CW = mw;            CH = Math.round(mw/ratio); }
-  else                { CH = mh;            CW = Math.round(mh*ratio); }
+  const mw = Math.max(wrap.clientWidth  - padH, 0);
+  const mh = Math.max(wrap.clientHeight - padV, 0);
+  if (mw > 0 && mh > 0) {
+    if (mw/ratio <= mh) { CW = mw; CH = Math.round(mw/ratio); }
+    else                { CH = mh; CW = Math.round(mh*ratio); }
+  }
+  // else keep previous CW/CH (e.g. DevTools reduced viewport to 0-height)
   // Size the backing store at physical pixels so it stays sharp on HiDPI / projector
   _dpr = window.devicePixelRatio || 1;
   canvas.width  = Math.round(CW * _dpr);
