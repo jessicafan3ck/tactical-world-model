@@ -555,7 +555,7 @@ body.show-p-notation .metric-p-sub { display: block; }
 
   <div class="mode-toggle non-presenter">
     <button class="mode-btn active" onclick="setMode('explainer')">Explore</button>
-    <button class="mode-btn"        onclick="setMode('analyst')">Analyst</button>
+    <button class="mode-btn"        onclick="setMode('analyst')">Analyze</button>
     <button class="mode-btn"        onclick="setMode('describe')">Describe</button>
     <button class="mode-btn"        onclick="setMode('draw')">Draw</button>
   </div>
@@ -1513,15 +1513,22 @@ function renderMetrics(p, d, stds, prevProbs) {
   }
 
   // ±CI on all three metrics (shown when n_samples > 1)
-  const ciShot = stds?.p_shot        != null ? `±${Math.round(stds.p_shot        * 100)}%` : "";
-  const ciFin  = stds?.p_final_third != null ? `±${Math.round(stds.p_final_third * 100)}%` : "";
-  const ciAdv  = stds?.p_advance     != null ? `±${Math.round(stds.p_advance     * 100)}%` : "";
-  document.getElementById("shotSub").textContent +=
-    (document.getElementById("shotSub").textContent && ciShot) ? ` · ${ciShot}` : ciShot ? ciShot : "";
-  const finCI = document.getElementById("finCI");
-  const advCI = document.getElementById("advCI");
-  if (finCI) finCI.textContent = ciFin;
-  if (advCI) advCI.textContent = ciAdv;
+  if (stds) {
+    const n    = S.nSamples || 10;
+    const tip  = `Standard deviation across ${n} simulations — wider range = more generator uncertainty`;
+    const fmtCI = (std) => std != null ? `±${Math.round(std * 100)}% (${n} sims)` : "";
+    const ciShot = fmtCI(stds.p_shot);
+    const ciFin  = fmtCI(stds.p_final_third);
+    const ciAdv  = fmtCI(stds.p_advance);
+    const shotSubEl = document.getElementById("shotSub");
+    if (ciShot && shotSubEl.textContent) shotSubEl.textContent += ` · ${ciShot}`;
+    else if (ciShot) shotSubEl.textContent = ciShot;
+    shotSubEl.title = tip;
+    const finCI = document.getElementById("finCI");
+    const advCI = document.getElementById("advCI");
+    if (finCI) { finCI.textContent = ciFin; finCI.title = tip; }
+    if (advCI) { advCI.textContent = ciAdv; advCI.title = tip; }
+  }
 }
 
 function formatDelta(pts) { return (pts >= 0 ? "+" : "") + pts; }
