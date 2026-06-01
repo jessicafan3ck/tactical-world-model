@@ -739,3 +739,83 @@ async def analyze_sequence(req: AnalyzeSequenceRequest):
         return {"analysis": text, "available": True}
     except Exception as e:
         return {"analysis": "", "available": False, "error": str(e)}
+
+
+# ── NL → sequence ──────────────────────────────────────────────────────────────
+
+class NLToSequenceRequest(BaseModel):
+    text:        str
+    team_name_a: str   = "Team A"
+    team_name_b: str   = "Team B"
+    zone:        int   = 1
+    minute:      float = 45.0
+    score_diff:  float = 0.0
+    phase:       int   = 0
+
+
+_VALID_ACTIONS = {
+    "ADVANCE":      "drive forward through the center",
+    "THROUGH_BALL": "play a pass in behind the defensive line for a runner",
+    "CROSS":        "deliver from the flank into the penalty area",
+    "DRIBBLE":      "carry the ball past a defender 1-on-1",
+    "SHOOT":        "attempt a shot on goal",
+    "SWITCH_LEFT":  "switch play to the left flank",
+    "SWITCH_RIGHT": "switch play to the right flank",
+    "PRESS":        "press high to win the ball back",
+    "HOLD":         "hold possession and wait for an opening",
+    "KEEPER_BALL":  "goalkeeper builds out from the back",
+    "LOW_BLOCK":    "drop into a compact low block",
+}
+
+
+@app.post("/api/nl_to_sequence")
+async def nl_to_sequence(req: NLToSequenceRequest):
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"sequence": [], "available": False}
+
+    action_list = "\n".join(f"  {k}: {v}" for k, v in _VALID_ACTIONS.items())
+    zone_names  = {0: "own half", 1: "midfield", 2: "attacking third", 3: "penalty area"}
+    zone_str    = zone_names.get(req.zone, f"zone {req.zone}")
+    score_str   = (
+        "level" if req.score_diff == 0
+        else f"up {int(abs(req.score_diff))}" if req.score_diff > 0
+        else f"down {int(abs(req.score_diff))}"
+    )
+
+    prompt = (
+        f"You are a football tactics engine. Convert a tactical description into an ordered action sequence.\n\n"
+        f"Context: {req.team_name_a} vs {req.team_name_b}, minute {req.minute:.0f}, "
+        f"score {score_str}, ball in the {zone_str}.\n\n"
+        f"Available actions (use exact key names):\n{action_list}\n\n"
+        f"Tactical description: {req.text}\n\n"
+        f"Rules:\n"
+        f"- Return ONLY a valid JSON array, no other text.\n"
+        f"- Each element: {{\"action\": <KEY>, \"alpha\": <float 0.5–1.5>}}.\n"
+        f"- alpha 1.0 = normal intensity; >1.0 = urgent/high-risk; <1.0 = cautious.\n"
+        f"- Maximum 8 steps. Minimum 1 step.\n"
+        f"- Only use the exact action keys listed above.\n\n"
+        f"JSON array:"
+    )
+
+    try:
+        import anthropic, json as _json, re as _re
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model      = "claude-haiku-4-5-20251001",
+            max_tokens = 300,
+            messages   = [{"role": "user", "content": prompt}],
+        )
+        raw  = msg.content[0].text.strip()
+        m    = _re.search(r'\[.*?\]', raw, _re.DOTALL)
+        if not m:
+            return {"sequence": [], "available": True, "raw": raw, "error": "No JSON array found"}
+        steps = _json.loads(m.group(0))
+        valid = [
+            {"action": s["action"], "alpha": float(s.get("alpha", 1.0))}
+            for s in steps
+            if isinstance(s, dict) and s.get("action") in _VALID_ACTIONS
+        ]
+        return {"sequence": valid[:8], "available": True}
+    except Exception as e:
+        return {"sequence": [], "available": False, "error": str(e)}

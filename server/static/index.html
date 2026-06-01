@@ -47,6 +47,9 @@ body {
 [data-mode="explainer"] .analyst-only  { display: none !important; }
 [data-mode="analyst"]   .explainer-only{ display: none !important; }
 [data-mode="presenter"] .non-presenter { display: none !important; }
+.describe-only { display: none !important; }
+[data-mode="describe"]  .describe-only { display: flex !important; flex-direction: column; gap: 8px; }
+[data-mode="describe"]  .non-describe  { display: none !important; }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 header {
@@ -142,6 +145,24 @@ header {
 .ag-lbl  { font-size: 10px; font-weight: 600; color: var(--text); }
 .ag-canvas { width: 100%; height: auto; border-radius: 3px; display: block; }
 .ag-desc { font-size: 9px; color: var(--muted); line-height: 1.3; }
+
+/* ── Describe mode (NL input) ─────────────────────────────────────────────── */
+.nl-textarea {
+  width: 100%; box-sizing: border-box;
+  background: var(--surface2); color: var(--text);
+  border: 0.5px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; font-size: 12px; font-family: inherit;
+  resize: vertical; line-height: 1.5; min-height: 80px;
+}
+.nl-textarea::placeholder { color: var(--muted); }
+.nl-textarea:focus { outline: none; border-color: var(--accent); }
+.nl-status { font-size: 11px; color: var(--muted); min-height: 14px; }
+.nl-preview-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.nl-preview-list  { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.nl-step {
+  font-size: 11px; color: var(--text); background: var(--surface2);
+  border-radius: 4px; padding: 3px 8px;
+}
 .action-xl .ax-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .action-xl .ax-hint { font-size: 10px; color: var(--muted); }
 .action-xl .ax-hint.pos { color: var(--green); }
@@ -522,7 +543,7 @@ body.show-p-notation .metric-p-sub { display: block; }
   <div class="mode-toggle non-presenter">
     <button class="mode-btn active" onclick="setMode('explainer')">Explainer</button>
     <button class="mode-btn"        onclick="setMode('analyst')">Analyst</button>
-    <button class="mode-btn"        onclick="setMode('presenter')">Presenter</button>
+    <button class="mode-btn"        onclick="setMode('describe')">Describe</button>
   </div>
 </header>
 
@@ -533,7 +554,7 @@ body.show-p-notation .metric-p-sub { display: block; }
   <aside class="sidebar">
 
     <!-- Explainer: 5 large attack actions -->
-    <div class="action-xl-grid explainer-only">
+    <div class="action-xl-grid explainer-only non-describe">
       <div class="exploratory-label">Pick an action and watch how the play reshapes.</div>
       <button class="action-xl" data-action="ADVANCE"      onclick="explainerRun('ADVANCE')"
               onmouseenter="previewHint('ADVANCE')" onmouseleave="clearPreview()">
@@ -566,7 +587,7 @@ body.show-p-notation .metric-p-sub { display: block; }
     </div>
 
     <!-- Analyst: all 11 actions -->
-    <div class="analyst-only">
+    <div class="analyst-only non-describe">
       <div class="palette-group">
         <h4>Attack</h4>
         <button class="action-sm attack" data-action="ADVANCE"      onclick="addToQueue('ADVANCE')">
@@ -615,8 +636,22 @@ body.show-p-notation .metric-p-sub { display: block; }
     </div>
 
     <!-- Run button (Analyst only) -->
-    <div class="run-wrap analyst-only">
+    <div class="run-wrap analyst-only non-describe">
       <button class="btn-run" id="runBtn" onclick="runSim()" disabled>▶ Run sequence</button>
+    </div>
+
+    <!-- Describe mode: natural language tactical input -->
+    <div class="describe-only" id="describePanel">
+      <div class="exploratory-label">Describe a play in plain language — the engine will translate it into an action sequence and simulate it.</div>
+      <textarea id="nlInput" class="nl-textarea"
+        placeholder="e.g. Switch wide left, play in behind the defensive line, shoot on goal"
+        rows="5" oninput="nlInputChanged()"></textarea>
+      <button class="btn-run" id="nlRunBtn" onclick="runNL()" disabled>▶ Simulate</button>
+      <div id="nlStatus" class="nl-status"></div>
+      <div id="nlPreview" style="display:none">
+        <div class="nl-preview-label">Extracted sequence</div>
+        <div id="nlPreviewList" class="nl-preview-list"></div>
+      </div>
     </div>
 
     <!-- Action guide (what each action looks like) -->
@@ -902,10 +937,13 @@ function setMode(m) {
   S.mode = m;
   document.documentElement.setAttribute("data-mode", m);
   document.querySelectorAll(".mode-btn").forEach((btn, i) => {
-    btn.classList.toggle("active", ["explainer","analyst","presenter"][i] === m);
+    btn.classList.toggle("active", ["explainer","analyst","describe"][i] === m);
   });
   if (m === "analyst") {
     document.getElementById("advancedDisc").open = true;
+  }
+  if (m === "describe") {
+    requestAnimationFrame(() => document.getElementById("nlInput")?.focus());
   }
   updateRunBtn();
   // Reflow layout first, then resize canvas so it fills the new dimensions
@@ -1426,6 +1464,8 @@ function clearAll() {
   S.queue = []; S.frames = []; S.step = -1; stopPlay();
   _prevPositions = null;
   S._openingPositions = null;
+  const nlPrev = document.getElementById('nlPreview');
+  if (nlPrev) nlPrev.style.display = 'none';
   S.identitiesA = null; S.identitiesB = null;
   redrawAnalystQueue(); updateRunBtn();
   document.getElementById("playbackBar").style.display = "none";
@@ -2160,6 +2200,72 @@ function parseURLSequence() {
       S.queue.push({action:name, alpha:parseFloat(alpha)||1.0});
   }
   if (S.queue.length) { redrawAnalystQueue(); updateRunBtn(); }
+}
+
+// ── Describe mode (NL → sequence) ─────────────────────────────────────────────
+function nlInputChanged() {
+  const btn = document.getElementById('nlRunBtn');
+  if (btn) btn.disabled = !document.getElementById('nlInput').value.trim();
+}
+
+const _NL_ACTION_LABELS = {
+  ADVANCE:'Advance', THROUGH_BALL:'Through ball', CROSS:'Cross',
+  DRIBBLE:'Dribble', SHOOT:'Shoot', SWITCH_LEFT:'Switch left',
+  SWITCH_RIGHT:'Switch right', PRESS:'Press', HOLD:'Hold',
+  KEEPER_BALL:'Keeper ball', LOW_BLOCK:'Low block',
+};
+
+async function runNL() {
+  const text = document.getElementById('nlInput').value.trim();
+  if (!text || !S.teamA || !S.teamB) return;
+  const btn    = document.getElementById('nlRunBtn');
+  const status = document.getElementById('nlStatus');
+  const preview = document.getElementById('nlPreview');
+  btn.disabled = true;
+  status.textContent = 'Translating…';
+  preview.style.display = 'none';
+  try {
+    const ctx = currentCtx();
+    const res = await fetch('/api/nl_to_sequence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        team_name_a: S.teamNameA || 'Team A',
+        team_name_b: S.teamNameB || 'Team B',
+        zone:        ctx.zone,
+        minute:      ctx.minute,
+        score_diff:  ctx.score_diff,
+        phase:       ctx.phase,
+      }),
+    });
+    const data = await res.json();
+    if (!data.available) {
+      status.textContent = 'ANTHROPIC_API_KEY not configured — add it to .env';
+      return;
+    }
+    if (!data.sequence?.length) {
+      status.textContent = 'Could not extract a sequence — try rephrasing.';
+      return;
+    }
+    // Show extracted sequence
+    document.getElementById('nlPreviewList').innerHTML =
+      data.sequence.map((s, i) =>
+        `<div class="nl-step">${i+1}. ${_NL_ACTION_LABELS[s.action] || s.action}</div>`
+      ).join('');
+    preview.style.display = 'block';
+    status.textContent = '';
+    // Populate queue and simulate
+    clearAll();
+    for (const s of data.sequence) S.queue.push({ action: s.action, alpha: s.alpha });
+    redrawAnalystQueue();
+    updateRunBtn();
+    await runSim();
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = !document.getElementById('nlInput').value.trim();
+  }
 }
 
 // ── Action guide ───────────────────────────────────────────────────────────────
