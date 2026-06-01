@@ -164,6 +164,17 @@ header {
   font-size: 11px; color: var(--text); background: var(--surface2);
   border-radius: 4px; padding: 3px 8px;
 }
+
+/* ── Draw mode ────────────────────────────────────────────────────────────── */
+.draw-only { display: none !important; }
+[data-mode="draw"] .draw-only { display: flex !important; flex-direction: column; gap: 8px; }
+[data-mode="draw"] .non-draw  { display: none !important; }
+[data-mode="draw"] #pitch     { cursor: crosshair; user-select: none; }
+.draw-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.draw-hint kbd {
+  background: var(--surface2); border: 0.5px solid var(--border);
+  border-radius: 3px; padding: 1px 4px; font-size: 10px; font-family: monospace;
+}
 .action-xl .ax-name { font-size: 13px; font-weight: 500; color: var(--text); }
 .action-xl .ax-hint { font-size: 10px; color: var(--muted); }
 .action-xl .ax-hint.pos { color: var(--green); }
@@ -334,6 +345,7 @@ canvas { max-width: 100%; max-height: 100%; border-radius: 4px; display: block; 
 .metric-delta-sm.neg { color: var(--red); }
 .metric-delta-sm.flat { color: var(--muted); }
 .metric-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.metric-ci  { font-size: 10px; color: var(--muted); margin-left: 2px; }
 .metric-track { height: 3px; background: var(--surface2); border-radius: 2px; margin-top: 6px; overflow: hidden; }
 .metric-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
 
@@ -542,9 +554,10 @@ body.show-p-notation .metric-p-sub { display: block; }
   </div>
 
   <div class="mode-toggle non-presenter">
-    <button class="mode-btn active" onclick="setMode('explainer')">Explainer</button>
+    <button class="mode-btn active" onclick="setMode('explainer')">Explore</button>
     <button class="mode-btn"        onclick="setMode('analyst')">Analyst</button>
     <button class="mode-btn"        onclick="setMode('describe')">Describe</button>
+    <button class="mode-btn"        onclick="setMode('draw')">Draw</button>
   </div>
 </header>
 
@@ -555,7 +568,7 @@ body.show-p-notation .metric-p-sub { display: block; }
   <aside class="sidebar">
 
     <!-- Explainer: 5 large attack actions -->
-    <div class="action-xl-grid explainer-only non-describe">
+    <div class="action-xl-grid explainer-only non-describe non-draw">
       <div class="exploratory-label">Pick an action and watch how the play reshapes.</div>
       <button class="action-xl" data-action="ADVANCE"      onclick="explainerRun('ADVANCE')"
               onmouseenter="previewHint('ADVANCE')" onmouseleave="clearPreview()">
@@ -608,7 +621,7 @@ body.show-p-notation .metric-p-sub { display: block; }
     </div>
 
     <!-- Analyst: all 11 actions -->
-    <div class="analyst-only non-describe">
+    <div class="analyst-only non-describe non-draw">
       <div class="palette-group">
         <h4>Attack</h4>
         <button class="action-sm attack" data-action="ADVANCE"      onclick="addToQueue('ADVANCE')">
@@ -657,8 +670,25 @@ body.show-p-notation .metric-p-sub { display: block; }
     </div>
 
     <!-- Run button (Analyst only) -->
-    <div class="run-wrap analyst-only non-describe">
+    <div class="run-wrap analyst-only non-describe non-draw">
       <button class="btn-run" id="runBtn" onclick="runSim()" disabled>▶ Run sequence</button>
+    </div>
+
+    <!-- Draw mode: path drawing + WASD -->
+    <div class="draw-only" id="drawPanel">
+      <div class="draw-hint">
+        <b>Draw</b> a ball path on the pitch, or use <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to step the ball forward/left/right.<br>
+        <kbd>Backspace</kbd> undoes the last step. <kbd>Enter</kbd> simulates.
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn-sm" onclick="clearDrawPath()" style="flex:1">Clear</button>
+        <button class="btn-run" id="drawRunBtn" onclick="runDrawPath()" disabled style="flex:2">▶ Simulate</button>
+      </div>
+      <div id="drawStatus" class="nl-status"></div>
+      <div id="drawPreview" style="display:none">
+        <div class="nl-preview-label">Extracted sequence</div>
+        <div id="drawPreviewList" class="nl-preview-list"></div>
+      </div>
     </div>
 
     <!-- Describe mode: natural language tactical input -->
@@ -792,6 +822,7 @@ body.show-p-notation .metric-p-sub { display: block; }
         <div class="metric-value-row">
           <span class="metric-value" id="finVal">—</span>
           <span class="metric-delta-sm flat" id="finDelta"></span>
+          <span class="metric-ci" id="finCI"></span>
         </div>
         <div class="metric-p-sub" id="finP"></div>
         <div class="metric-track"><div class="metric-fill" id="finBar" style="width:0%;background:var(--green)"></div></div>
@@ -802,6 +833,7 @@ body.show-p-notation .metric-p-sub { display: block; }
         <div class="metric-value-row">
           <span class="metric-value" id="advVal">—</span>
           <span class="metric-delta-sm flat" id="advDelta"></span>
+          <span class="metric-ci" id="advCI"></span>
         </div>
         <div class="metric-p-sub" id="advP"></div>
         <div class="metric-track"><div class="metric-fill" id="advBar" style="width:0%;background:var(--blue)"></div></div>
@@ -902,6 +934,8 @@ const S = {
   formationB: null,
   identitiesA: null,   // [{slotIdx, jersey, name, tier}] — locked after first frame
   identitiesB: null,   // propagated across frames via nearest-neighbour match
+  drawPath: [],        // [{x,y}] waypoints in draw mode
+  ghostPos: null,      // current ghost ball position in draw mode
 };
 
 // ── Default formation (4-3-3) ─────────────────────────────────────────────────
@@ -943,7 +977,8 @@ window.addEventListener("resize", () => {
   else drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null);
 });
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA") return;
+  if (S.mode === "draw") { handleDrawKey(e); return; }
   const a = KEY_MAP[e.key];
   if (a) {
     e.preventDefault();
@@ -958,13 +993,16 @@ function setMode(m) {
   S.mode = m;
   document.documentElement.setAttribute("data-mode", m);
   document.querySelectorAll(".mode-btn").forEach((btn, i) => {
-    btn.classList.toggle("active", ["explainer","analyst","describe"][i] === m);
+    btn.classList.toggle("active", ["explainer","analyst","describe","draw"][i] === m);
   });
   if (m === "analyst") {
     document.getElementById("advancedDisc").open = true;
   }
   if (m === "describe") {
     requestAnimationFrame(() => document.getElementById("nlInput")?.focus());
+  }
+  if (m === "draw") {
+    initDrawMode();
   }
   updateRunBtn();
   // Reflow layout first, then resize canvas so it fills the new dimensions
@@ -1463,18 +1501,27 @@ function renderMetrics(p, d, stds, prevProbs) {
     document.getElementById("advDelta").textContent = formatDelta(ap) + " pts";
     document.getElementById("advDelta").className = "metric-delta-sm " + deltaClass(ap);
 
-    // Sub-line: "was X% before this action · ±N pts"
+    // Sub-line: "was X% before this action"
     if (prevProbs || (d && p)) {
       const wasPct = prevProbs ? Math.round(prevProbs.p_shot * 100) : Math.round((p.p_shot - d.p_shot) * 100);
-      const std    = stds?.p_shot;
-      const uncert = std ? ` · ±${Math.round(std * 100)} pts` : "";
-      document.getElementById("shotSub").textContent = `was ${wasPct}% before this action${uncert}`;
+      document.getElementById("shotSub").textContent = `was ${wasPct}% before this action`;
     }
   } else {
     ["shotDelta","finDelta","advDelta"].forEach(id => {
       document.getElementById(id).textContent = "";
     });
   }
+
+  // ±CI on all three metrics (shown when n_samples > 1)
+  const ciShot = stds?.p_shot        != null ? `±${Math.round(stds.p_shot        * 100)}%` : "";
+  const ciFin  = stds?.p_final_third != null ? `±${Math.round(stds.p_final_third * 100)}%` : "";
+  const ciAdv  = stds?.p_advance     != null ? `±${Math.round(stds.p_advance     * 100)}%` : "";
+  document.getElementById("shotSub").textContent +=
+    (document.getElementById("shotSub").textContent && ciShot) ? ` · ${ciShot}` : ciShot ? ciShot : "";
+  const finCI = document.getElementById("finCI");
+  const advCI = document.getElementById("advCI");
+  if (finCI) finCI.textContent = ciFin;
+  if (advCI) advCI.textContent = ciAdv;
 }
 
 function formatDelta(pts) { return (pts >= 0 ? "+" : "") + pts; }
@@ -1487,12 +1534,15 @@ function clearAll() {
   S._openingPositions = null;
   const nlPrev = document.getElementById('nlPreview');
   if (nlPrev) nlPrev.style.display = 'none';
+  const drawPrev = document.getElementById('drawPreview');
+  if (drawPrev) drawPrev.style.display = 'none';
+  S.drawPath = []; _rawPath = [];
   S.identitiesA = null; S.identitiesB = null;
   redrawAnalystQueue(); updateRunBtn();
   document.getElementById("playbackBar").style.display = "none";
   document.getElementById("timeline").style.display    = "none";
   ["shotVal","finVal","advVal"].forEach(id => document.getElementById(id).textContent = "—");
-  ["shotDelta","finDelta","advDelta","shotSub"].forEach(id => document.getElementById(id).textContent = "");
+  ["shotDelta","finDelta","advDelta","shotSub","finCI","advCI"].forEach(id => { const el=document.getElementById(id); if(el) el.textContent=""; });
   setCommentary("Pick an action to see how the play reshapes.", true);
   document.querySelectorAll(".action-xl").forEach(b => b.classList.remove("selected"));
   fetchOpeningState().catch(() => drawFormation(DEF_POSITIONS, DEF_ROLES, DEF_MASK, null));
@@ -1990,6 +2040,7 @@ function drawFormation(positions, roles, mask, probs) {
   else if (S.overlay === "lanes")    drawPassingLanes(ctx,positions,roles,mask);
   else if (S.overlay === "space")    drawSpaceMap(ctx,positions,roles,mask);
   drawPlayers(ctx,positions,roles,mask,probs);
+  if (S.mode === "draw") _drawPathOverlay(ctx);
 }
 
 function setOverlay(type) {
@@ -2221,6 +2272,274 @@ function parseURLSequence() {
       S.queue.push({action:name, alpha:parseFloat(alpha)||1.0});
   }
   if (S.queue.length) { redrawAnalystQueue(); updateRunBtn(); }
+}
+
+// ── Draw mode ──────────────────────────────────────────────────────────────────
+let _drawing = false;
+let _rawPath  = [];
+let _drawRafId = null;
+
+function initDrawMode() {
+  // Reset to opening state, attach canvas events once
+  if (!_drawEventsAttached) _attachDrawEvents();
+  // Show clean pitch with ghost ball at kick-off position
+  if (!S.ghostPos) S.ghostPos = { x: 0.48, y: 0.50 };
+  const base = S.step >= 0 && S.frames[S.step]
+    ? S.frames[S.step]
+    : { positions: DEF_POSITIONS, roles: DEF_ROLES, mask: DEF_MASK, probs: null };
+  drawFormation(base.positions, base.roles, base.mask, base.probs);
+}
+
+let _drawEventsAttached = false;
+function _attachDrawEvents() {
+  _drawEventsAttached = true;
+  const cv = document.getElementById("pitch");
+
+  cv.addEventListener("mousedown", e => {
+    if (S.mode !== "draw") return;
+    _drawing = true;
+    _rawPath = [_canvasToNorm(e)];
+    S.ghostPos = _rawPath[0];
+    S.drawPath = [];
+    _redrawDraw();
+  });
+  cv.addEventListener("mousemove", e => {
+    if (S.mode !== "draw" || !_drawing) return;
+    const pt = _canvasToNorm(e);
+    _rawPath.push(pt);
+    if (!_drawRafId) _drawRafId = requestAnimationFrame(() => {
+      _drawRafId = null;
+      S.ghostPos = _rawPath[_rawPath.length - 1];
+      _redrawDraw();
+    });
+  });
+  cv.addEventListener("mouseup", e => {
+    if (S.mode !== "draw" || !_drawing) return;
+    _drawing = false;
+    const pt = _canvasToNorm(e);
+    _rawPath.push(pt);
+    S.drawPath = _simplifyPath(_rawPath, 0.035);
+    S.ghostPos = S.drawPath[S.drawPath.length - 1] || S.ghostPos;
+    _redrawDraw();
+    _updateDrawBtn();
+  });
+
+  // Touch
+  cv.addEventListener("touchstart", e => {
+    if (S.mode !== "draw") return;
+    e.preventDefault();
+    _drawing = true;
+    _rawPath = [_touchToNorm(e)];
+    S.ghostPos = _rawPath[0];
+    S.drawPath = [];
+    _redrawDraw();
+  }, { passive: false });
+  cv.addEventListener("touchmove", e => {
+    if (S.mode !== "draw" || !_drawing) return;
+    e.preventDefault();
+    _rawPath.push(_touchToNorm(e));
+    if (!_drawRafId) _drawRafId = requestAnimationFrame(() => {
+      _drawRafId = null;
+      S.ghostPos = _rawPath[_rawPath.length - 1];
+      _redrawDraw();
+    });
+  }, { passive: false });
+  cv.addEventListener("touchend", e => {
+    if (S.mode !== "draw") return;
+    _drawing = false;
+    S.drawPath = _simplifyPath(_rawPath, 0.035);
+    S.ghostPos = S.drawPath[S.drawPath.length - 1] || S.ghostPos;
+    _redrawDraw();
+    _updateDrawBtn();
+  }, { passive: false });
+}
+
+function _canvasToNorm(e) {
+  const r = document.getElementById("pitch").getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+}
+function _touchToNorm(e) {
+  const t = e.touches[0] || e.changedTouches[0];
+  const r = document.getElementById("pitch").getBoundingClientRect();
+  return { x: (t.clientX - r.left) / r.width, y: (t.clientY - r.top) / r.height };
+}
+
+function _simplifyPath(pts, minDist) {
+  if (!pts.length) return [];
+  const out = [pts[0]];
+  for (const p of pts) {
+    const last = out[out.length - 1];
+    if (Math.hypot(p.x - last.x, p.y - last.y) >= minDist) out.push(p);
+  }
+  return out;
+}
+
+function _redrawDraw() {
+  const f = S.step >= 0 && S.frames[S.step]
+    ? S.frames[S.step]
+    : { positions: DEF_POSITIONS, roles: DEF_ROLES, mask: DEF_MASK, probs: null };
+  drawFormation(f.positions, f.roles, f.mask, f.probs);
+}
+
+function _drawPathOverlay(ctx) {
+  const path = S.drawPath.length ? S.drawPath : (_rawPath.length ? _rawPath : []);
+  const ghost = S.ghostPos;
+  if (!path.length && !ghost) return;
+
+  ctx.save();
+  ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
+
+  // Path line
+  if (path.length > 1) {
+    ctx.strokeStyle = "rgba(240,192,64,0.85)";
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath();
+    ctx.moveTo(path[0].x * CW, path[0].y * CH);
+    for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x * CW, path[i].y * CH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Direction arrowhead at end of path
+    if (path.length >= 2) {
+      const p1 = path[path.length - 2], p2 = path[path.length - 1];
+      const a = Math.atan2((p2.y - p1.y) * CH, (p2.x - p1.x) * CW);
+      const tx = p2.x * CW, ty = p2.y * CH, hl = 9;
+      ctx.fillStyle = "rgba(240,192,64,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - hl * Math.cos(a - 0.4), ty - hl * Math.sin(a - 0.4));
+      ctx.lineTo(tx - hl * Math.cos(a + 0.4), ty - hl * Math.sin(a + 0.4));
+      ctx.closePath(); ctx.fill();
+    }
+
+    // Waypoint dots
+    for (let i = 0; i < path.length - 1; i++) {
+      ctx.beginPath();
+      ctx.arc(path[i].x * CW, path[i].y * CH, 2.5, 0, 2 * Math.PI);
+      ctx.fillStyle = "rgba(240,192,64,0.5)";
+      ctx.fill();
+    }
+  }
+
+  // Ghost ball
+  const g = ghost || (path.length ? path[path.length - 1] : null);
+  if (g) {
+    const gx = g.x * CW, gy = g.y * CH;
+    // Glow
+    ctx.beginPath(); ctx.arc(gx, gy, 10, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(240,192,64,0.12)"; ctx.fill();
+    // Ball
+    ctx.beginPath(); ctx.arc(gx, gy, 5.5, 0, 2 * Math.PI);
+    ctx.fillStyle = "#f0c040";
+    ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1;
+    ctx.fill(); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function handleDrawKey(e) {
+  const DRAW_KEYS = new Set(["w","W","a","A","s","S","d","D",
+                              "ArrowUp","ArrowLeft","ArrowDown","ArrowRight",
+                              "Enter","Backspace"]);
+  if (!DRAW_KEYS.has(e.key)) return;
+  e.preventDefault();
+
+  const fwd = 0.09, lat = 0.12, bk = 0.05;
+  let dx = 0, dy = 0;
+  if (e.key === "w" || e.key === "W" || e.key === "ArrowUp")    dx = +fwd;
+  if (e.key === "s" || e.key === "S" || e.key === "ArrowDown")  dx = -bk;
+  if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft")  dy = -lat;
+  if (e.key === "d" || e.key === "D" || e.key === "ArrowRight") dy = +lat;
+
+  if (dx !== 0 || dy !== 0) {
+    const cur = S.ghostPos || { x: 0.48, y: 0.50 };
+    const next = {
+      x: Math.max(0.03, Math.min(0.97, cur.x + dx)),
+      y: Math.max(0.03, Math.min(0.97, cur.y + dy)),
+    };
+    if (!S.drawPath.length) S.drawPath.push({ ...cur });
+    S.drawPath.push(next);
+    S.ghostPos = next;
+    _redrawDraw();
+    _updateDrawBtn();
+  }
+  if (e.key === "Enter") { runDrawPath(); }
+  if (e.key === "Backspace" && S.drawPath.length > 1) {
+    S.drawPath.pop();
+    S.ghostPos = S.drawPath[S.drawPath.length - 1];
+    _redrawDraw();
+    _updateDrawBtn();
+  }
+}
+
+function _pathToActions(waypoints) {
+  if (waypoints.length < 2) return [];
+  const out = [];
+  for (let i = 0; i < waypoints.length - 1 && out.length < 8; i++) {
+    const dx = waypoints[i + 1].x - waypoints[i].x;
+    const dy = waypoints[i + 1].y - waypoints[i].y;
+    const x2 = waypoints[i + 1].x;
+    const y2 = waypoints[i + 1].y;
+    let action;
+    if (x2 > 0.83) {
+      action = "SHOOT";
+    } else if (x2 > 0.68 && (y2 < 0.18 || y2 > 0.82)) {
+      action = "CROSS";
+    } else if (dy < -0.10) {
+      action = "SWITCH_LEFT";
+    } else if (dy > 0.10) {
+      action = "SWITCH_RIGHT";
+    } else if (dx > 0.12 && Math.abs(dy) < 0.06) {
+      action = "THROUGH_BALL";
+    } else if (dx > 0.05 && Math.abs(dy) >= 0.06) {
+      action = "DRIBBLE";
+    } else if (dx > 0.04) {
+      action = "ADVANCE";
+    } else {
+      action = "HOLD";
+    }
+    // Avoid trivial adjacent repeats (except ADVANCE which can chain)
+    if (!out.length || out[out.length - 1] !== action || action === "ADVANCE") {
+      out.push(action);
+    }
+  }
+  return out;
+}
+
+function _updateDrawBtn() {
+  const btn = document.getElementById("drawRunBtn");
+  if (btn) btn.disabled = S.drawPath.length < 2;
+}
+
+function clearDrawPath() {
+  S.drawPath = [];
+  S.ghostPos = { x: 0.48, y: 0.50 };
+  _rawPath = [];
+  document.getElementById("drawPreview").style.display = "none";
+  document.getElementById("drawStatus").textContent = "";
+  _redrawDraw();
+  _updateDrawBtn();
+}
+
+async function runDrawPath() {
+  if (S.drawPath.length < 2 || !S.teamA || !S.teamB) return;
+  const sequence = _pathToActions(S.drawPath);
+  if (!sequence.length) {
+    document.getElementById("drawStatus").textContent = "Path too short — draw further or press W to advance.";
+    return;
+  }
+  document.getElementById("drawPreviewList").innerHTML = sequence.map((a, i) =>
+    `<div class="nl-step">${i + 1}. ${_NL_ACTION_LABELS[a] || a}</div>`
+  ).join("");
+  document.getElementById("drawPreview").style.display = "block";
+  document.getElementById("drawStatus").textContent = "";
+  clearAll();
+  for (const a of sequence) S.queue.push({ action: a, alpha: 1.0 });
+  redrawAnalystQueue();
+  updateRunBtn();
+  await runSim();
 }
 
 // ── Describe mode (NL → sequence) ─────────────────────────────────────────────
