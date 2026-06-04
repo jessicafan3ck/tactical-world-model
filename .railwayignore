@@ -1,0 +1,30 @@
+# Used by `railway up` instead of .gitignore.
+# Checkpoints are intentionally NOT excluded here — they get baked into the deploy.
+
+.DS_Store
+.claude/
+
+# Raw / processed data (large, not needed at runtime)
+data/raw/
+data/processed/
+data/results/**/*.parquet
+data/results/**/*.pt
+
+# Training scripts (not needed at runtime)
+scripts/
+notebooks/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Secrets
+.env

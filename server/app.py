@@ -40,6 +40,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import torch
@@ -64,13 +65,17 @@ _commentary_cache: dict[str, str] = {}   # keyed by hash of inputs
 async def lifespan(app: FastAPI):
     global _engine, _team_names
 
+    # Download checkpoints from HF Hub if HF_REPO_ID is set and they're missing
+    from .download_checkpoints import download as _dl
+    _dl()
+
     required = [CKPT / "sse_best.pt",
                 CKPT / "generator_best.pt",
                 CKPT / "team_fingerprints.pt"]
     missing = [p.name for p in required if not p.exists()]
     if missing:
         print(f"WARNING: Missing checkpoints {missing} — engine not loaded.")
-        print("Run 03_train_generator.py first, then restart the server.")
+        print("Set HF_REPO_ID env var or run 03_train_generator.py first.")
     else:
         _engine = ConditionalEngine(
             sse_path         = CKPT / "sse_best.pt",
@@ -94,6 +99,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Tactical World Model", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 # Serve static files (the frontend) from server/static/
 static_dir = Path(__file__).parent / "static"
@@ -438,10 +450,10 @@ async def optimize(req: OptimizeRequest):
         raise HTTPException(400, f"team_id_a={req.team_id_a} not in fingerprints")
     if req.team_id_b not in _engine.fingerprints:
         raise HTTPException(400, f"team_id_b={req.team_id_b} not in fingerprints")
-    if not (1 <= req.max_depth <= 6):
-        raise HTTPException(400, "max_depth must be 1–6")
-    if not (1 <= req.beam_width <= 5):
-        raise HTTPException(400, "beam_width must be 1–5")
+    if not (1 <= req.max_depth <= 10):
+        raise HTTPException(400, "max_depth must be 1–10")
+    if not (1 <= req.beam_width <= 10):
+        raise HTTPException(400, "beam_width must be 1–10")
 
     ctx = MatchContext(
         score_diff = req.context.score_diff,
